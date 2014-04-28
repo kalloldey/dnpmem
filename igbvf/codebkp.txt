@@ -1,0 +1,207 @@
+saved on 25032014: will rollback to follow the vmdq impl for this 
+
+static bool igbvf_clean_rx_irq(struct igbvf_adapter *adapter,
+                               int *work_done, int work_to_do)
+{
+	struct igbvf_ring *rx_ring = adapter->rx_ring;
+	struct net_device *netdev = adapter->netdev;
+	struct pci_dev *pdev = adapter->pdev;
+	union e1000_adv_rx_desc *rx_desc, *next_rxd;
+	struct igbvf_buffer *buffer_info, *next_buffer;
+	struct sk_buff *skb;
+	bool cleaned = false;
+	int cleaned_count = 0;
+	unsigned int total_bytes = 0, total_packets = 0;
+	unsigned int i;
+        struct dnp_cb *tag = NULL;  //dnptwo        
+	u32 length, hlen, staterr;
+                        
+	i = rx_ring->next_to_clean;
+	rx_desc = IGBVF_RX_DESC_ADV(*rx_ring, i);
+	staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+      //  DFLOW(); //coming to this
+	while (staterr & E1000_RXD_STAT_DD) {
+          //      DFLOW(); //nto comign to this
+		if (*work_done >= work_to_do)
+			break;
+		(*work_done)++;
+		rmb(); /* read descriptor and rx_buffer_info after status DD */
+
+		buffer_info = &rx_ring->buffer_info[i];
+
+		/* HW will not DMA in data larger than the given buffer, even
+		 * if it parses the (NFS, of course) header to be larger.  In
+		 * that case, it fills the header buffer and spills the rest
+		 * into the page.
+		 */
+		hlen = (le16_to_cpu(rx_desc->wb.lower.lo_dword.hs_rss.hdr_info) &
+		  E1000_RXDADV_HDRBUFLEN_MASK) >> E1000_RXDADV_HDRBUFLEN_SHIFT;
+		if (hlen > adapter->rx_ps_hdr_size)
+			hlen = adapter->rx_ps_hdr_size;
+
+		length = le16_to_cpu(rx_desc->wb.upper.length);
+		cleaned = true;
+		cleaned_count++;
+
+		skb = buffer_info->skb;
+                prefetch(skb->data - NET_IP_ALIGN);
+                buffer_info->skb = NULL;
+#ifdef DNP_XEN
+                if(adapter->dnpvf_id!=-1){
+                    DENTER();
+    
+                tag = (struct dnp_cb *)skb->cb; 
+                if(tag)
+                        printk(KERN_INFO "DNPMEM ig %s:%d func=%s | skbCB: id=%u, grantref=%u pageaddr=%p, grant_handle =%u\n",__FILE__,__LINE__,__func__,tag->id,tag->gref,tag->pgad,tag->handle);                       
+                      
+            /*        dma_unmap_page(&pdev->dev, 
+                            buffer_info->dma,   //this is correct as we assigned dma not page_dma
+                            PAGE_SIZE,
+                            DMA_FROM_DEVICE);*/
+                    skb_shinfo(skb)->frags[0].size = length; 
+                    //Below added later :
+                    buffer_info->page_dma = 0;
+                    skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags,
+			                   buffer_info->page,
+			                   buffer_info->page_offset,
+			                   length);
+                     skb->len += length;
+                     skb->data_len += length;
+		     skb->truesize += PAGE_SIZE;
+                     printk(KERN_INFO "DNPMEM ig buffer_info->dma =%x, buffer_info->page=%x skb_shinfo(skb)->nr_frags=%x\n",\
+                             buffer_info->dma,buffer_info->page,skb_shinfo(skb)->nr_frags);       
+                     DEXIT();
+          //           printk(KERN_INFO "DNPMEM ig skb len=%d, skb_data len=%d, skb_true_size=%d \n", skb->len, skb->data_len, skb->truesize );      
+                    // goto send_up; 
+                     goto next_desc;
+                     
+
+                }else{
+#endif                
+                        if (!adapter->rx_ps_hdr_size) {
+                        	dma_unmap_single(&pdev->dev, buffer_info->dma,
+			                 adapter->rx_buffer_len,
+					 DMA_FROM_DEVICE);
+                        	buffer_info->dma = 0;
+                        	skb_put(skb, length);
+                                goto send_up;
+                        }                      
+#ifdef DNP_XEN
+                }
+#endif              
+                
+        /*[DNP] The upper if loop always gets true for DNP case ..
+         so always jump to 'send_up'. It also found that skbs nr_frag is 
+         * always 0 when it is received by the netback */
+		if (!skb_shinfo(skb)->nr_frags) {
+			dma_unmap_single(&pdev->dev, buffer_info->dma,
+			                 adapter->rx_ps_hdr_size,
+					 DMA_FROM_DEVICE);
+			skb_put(skb, hlen);
+		}
+
+		if (length) {
+			dma_unmap_page(&pdev->dev, buffer_info->page_dma,
+			               PAGE_SIZE / 2,
+				       DMA_FROM_DEVICE);
+			buffer_info->page_dma = 0;
+
+			skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags,
+			                   buffer_info->page,
+			                   buffer_info->page_offset,
+			                   length);
+
+			if ((adapter->rx_buffer_len > (PAGE_SIZE / 2)) ||
+			    (page_count(buffer_info->page) != 1))
+				buffer_info->page = NULL;
+			else
+				get_page(buffer_info->page);
+
+			skb->len += length;
+			skb->data_len += length;
+			skb->truesize += PAGE_SIZE / 2;
+		}
+send_up:
+		i++;
+		if (i == rx_ring->count)
+			i = 0;
+		next_rxd = IGBVF_RX_DESC_ADV(*rx_ring, i);
+		prefetch(next_rxd);
+		next_buffer = &rx_ring->buffer_info[i];
+
+		if (!(staterr & E1000_RXD_STAT_EOP)) {
+			buffer_info->skb = next_buffer->skb;
+			buffer_info->dma = next_buffer->dma;
+			next_buffer->skb = skb;
+			next_buffer->dma = 0;
+			goto next_desc;
+		}
+
+		if (staterr & E1000_RXDEXT_ERR_FRAME_ERR_MASK) {                    
+#ifdef DNP_XEN
+                       if(adapter->dnpvf_id!=-1){
+                           DASSERT(0);
+                           adapter->free_dnpskb(skb,  adapter->dnpvf_id);
+                       }else
+#endif                 
+                                dev_kfree_skb_irq(skb);
+                     
+			goto next_desc;
+		}
+
+		total_bytes += skb->len;
+		total_packets++;
+
+		igbvf_rx_checksum_adv(adapter, staterr, skb);
+#ifdef DNP_XEN
+                if(adapter->dnpvf_id==-1) //Donot know why i keep it here??
+#endif                
+        		skb->protocol = eth_type_trans(skb, netdev);
+                
+
+		igbvf_receive_skb(adapter, netdev, skb, staterr,
+		                  rx_desc->wb.upper.vlan);
+                
+next_desc:
+                //DLELTE THIS BELOW BLOCK ::
+#ifdef DNP_XEN
+#if 1
+ if(adapter->dnpvf_id!=-1)     
+                {
+                i++;
+		if (i == rx_ring->count)
+			i = 0;
+		next_rxd = IGBVF_RX_DESC_ADV(*rx_ring, i);
+		prefetch(next_rxd);
+                }       
+#endif
+#endif
+
+		rx_desc->wb.upper.status_error = 0;
+
+		/* return some buffers to hardware, one at a time is too slow */
+		if (cleaned_count >= IGBVF_RX_BUFFER_WRITE) {
+			igbvf_alloc_rx_buffers(rx_ring, cleaned_count);
+			cleaned_count = 0;
+		}
+
+		/* use prefetched values */
+		rx_desc = next_rxd;
+		buffer_info = next_buffer;
+
+		staterr = le32_to_cpu(rx_desc->wb.upper.status_error);
+	} //end of while loop 
+
+	rx_ring->next_to_clean = i;
+	cleaned_count = igbvf_desc_unused(rx_ring);
+
+	if (cleaned_count)
+		igbvf_alloc_rx_buffers(rx_ring, cleaned_count);
+
+	adapter->total_rx_packets += total_packets;
+	adapter->total_rx_bytes += total_bytes;
+	adapter->net_stats.rx_bytes += total_bytes;
+	adapter->net_stats.rx_packets += total_packets;
+      //  DEXIT();
+	return cleaned;
+}

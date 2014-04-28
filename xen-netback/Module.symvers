@@ -1,0 +1,3 @@
+0x18518251	igbvf_xmit_frame	/home/kallol/dev/igbvf/igbvf	EXPORT_SYMBOL
+0x964b1007	set_restart_igbvf	/home/kallol/dev/igbvf/igbvf	EXPORT_SYMBOL
+0x4b896913	dvfa_set_mac	/home/kallol/dev/igbvf/igbvf	EXPORT_SYMBOL

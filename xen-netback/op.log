@@ -1,0 +1,14 @@
+make -C /lib/modules/3.5.0-37-generic/build M=/home/kallol/MTP/Code/dev/xen-netback-doMistake modules
+make[1]: Entering directory `/usr/src/linux-headers-3.5.0-37-generic'
+  CC [M]  /home/kallol/MTP/Code/dev/xen-netback-doMistake/dnp_controller.o
+  CC [M]  /home/kallol/MTP/Code/dev/xen-netback-doMistake/vfway.o
+/home/kallol/MTP/Code/dev/xen-netback-doMistake/vfway.c: In function ‘backend_allocate_dnpVF’:
+/home/kallol/MTP/Code/dev/xen-netback-doMistake/vfway.c:39:9: warning: unused variable ‘ret’ [-Wunused-variable]
+/home/kallol/MTP/Code/dev/xen-netback-doMistake/vfway.c: In function ‘vf_connect’:
+/home/kallol/MTP/Code/dev/xen-netback-doMistake/vfway.c:53:1: warning: control reaches end of non-void function [-Wreturn-type]
+  LD [M]  /home/kallol/MTP/Code/dev/xen-netback-doMistake/xen-netback.o
+  Building modules, stage 2.
+  MODPOST 1 modules
+  CC      /home/kallol/MTP/Code/dev/xen-netback-doMistake/xen-netback.mod.o
+  LD [M]  /home/kallol/MTP/Code/dev/xen-netback-doMistake/xen-netback.ko
+make[1]: Leaving directory `/usr/src/linux-headers-3.5.0-37-generic'

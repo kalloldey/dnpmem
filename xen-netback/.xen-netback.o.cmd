@@ -1,0 +1,1 @@
+cmd_/home/kallol/dev/xen-netback/xen-netback.o := ld -m elf_x86_64   -r -o /home/kallol/dev/xen-netback/xen-netback.o /home/kallol/dev/xen-netback/netback.o /home/kallol/dev/xen-netback/xenbus.o /home/kallol/dev/xen-netback/interface.o /home/kallol/dev/xen-netback/dnp_controller.o 

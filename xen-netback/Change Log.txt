@@ -1,0 +1,38 @@
+[14-10-2013] change id : metis
+As per our guess due to some problem in packet copying the packet 
+receiving in guest is not working properly. This change log has the
+below goals:
+    1.Debug the error, firstly in packet receive path
+    2.Properly commenting and understanding the operations done on skb
+    3.Fully understand the manipulation done on memory location of skb
+
+Result: Successful. 
+Root cause: 
+Calling "skb->protocol = eth_type_trans(skb, skb->dev);" this in both
+the receive and send path was stripping the MAC header .. so the 
+complement of this call is     skb_push(skb,ETH_HLEN); we add this
+so the error debugged.In send path the checksum calculation is still 
+messing up. So In the hw device I off the rx,tx etc off. Then it was 
+working fine. Robustness check done. Iperf server and client was run
+for 1 hour and it was perfect.
+
+Useful command:
+ethtool -K eth5 rx off
+ethtool -k eth5
+iperf -c 10.129.75.139 -t 3600 -P 10
+--written on 16.10.2013
+-------------------------------------
+[10-10-2013] change id : titan
+Will introduce all the attachment of VF(if have) with the VIF and detach the
+same from netback in all instance.
+
+
+-------------------------------------
+[08-10-2013]
+A huge mistake was there in the initial understanding.
+
+[05-10-2013]
+Kernel badly crashed multiple times
+
+[03-10-2013]
+Initial build 
