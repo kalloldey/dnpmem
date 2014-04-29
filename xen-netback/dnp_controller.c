@@ -26,6 +26,51 @@
 struct dnpvf *alldnpVFs[MAX_POSSIBLE_VF];
 static int total_VF,total_VF_Assigned;
 
+struct dnp_counters *dnpctrs=NULL;
+struct kobject *dnp_kobj;
+
+static ssize_t vmswitch_show(struct kobject *kobj, struct kobj_attribute *attr,
+                        char *buf)
+{
+        return sprintf(buf, "%u\n",0U);
+}
+
+static ssize_t vmswitch(struct kobject *kobj, struct kobj_attribute *attr,
+                        const char *buf,size_t count)
+{
+        int vmid = *((int *)buf);
+        if(count <= 0 || count > 6 || vmid < 0)
+            return -EINVAL;
+       //do the switching here
+        return 0;
+}
+static struct kobj_attribute dnpctrs_vmswitch_attribute = __ATTR(dnp_switch,0644,vmswitch_show,vmswitch);
+
+static ssize_t failed_maps_show(struct kobject *kobj, struct kobj_attribute *attr,
+                        char *buf)
+{
+        return sprintf(buf, "%lu\n",dnpctrs->failed_maps);
+}
+
+static struct kobj_attribute dnpctrs_failed_maps_attribute = __ATTR(dnp_failed_maps,0444,failed_maps_show,NULL);
+
+static ssize_t total_rcvd_show(struct kobject *kobj, struct kobj_attribute *attr,
+                        char *buf)
+{
+        return sprintf(buf, "%lu\n",dnpctrs->num_rcvd);
+}
+
+static struct kobj_attribute dnpctrs_total_rcvd_attribute = __ATTR(total_rcvd,0444,total_rcvd_show,NULL);
+
+static struct attribute *attrs[] = {
+        &dnpctrs_vmswitch_attribute.attr,
+        &dnpctrs_failed_maps_attribute.attr,
+        &dnpctrs_total_rcvd_attribute.attr,
+        NULL,   /* need to NULL terminate the list of attributes */
+};
+static struct attribute_group attr_group = {
+        .attrs = attrs,
+};
 
 static void noinline do_check_kpage(void *vaddr)
 {    
@@ -158,6 +203,19 @@ void dnp_controller_init(void){
     strcpy(alldnpVFs[1]->name,"eth6");
     alldnpVFs[1]->vm_domid=-1;
     alldnpVFs[1]->dnp_netdev=dev_get_by_name(&init_net,alldnpVFs[1]->name);
+    dnp_kobj = kobject_create_and_add("dnp", NULL);
+    if (!dnp_kobj)
+           printk(KERN_WARNING "%s: kobj create error\n", __func__);
+    dnpctrs = kmalloc(sizeof(struct dnp_counters),GFP_KERNEL);
+    if(dnpctrs){
+        memset(dnpctrs,0,sizeof(struct dnp_counters));
+        if(sysfs_create_group(dnp_kobj, &attr_group)){
+               printk(KERN_WARNING "%s: kobj group create errot\n",__func__);
+        }else{
+               printk(KERN_WARNING "Out of memory: %s\n",__func__);
+        }
+    }
+
  //   EXIT();
     /*<-- Temporary hack ends here ... remove it ASAP[03.10.2013]*/        
 }
@@ -172,7 +230,6 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     unsigned int loc;
     int nr_buf;
     struct dnp_cb *tag = NULL;
-    void *addr = NULL;
   //  ENTER();
 
     if(vif ==NULL){
@@ -356,6 +413,7 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
        RING_PUSH_RESPONSES_AND_CHECK_NOTIFY(&vif->rx, ret);
         if(ret)
             notify_remote_via_irq(vif->irq);
+       dnpctrs->num_rcvd++;
         //RING_PUSH_RESPONSES(&vif->rx);
         //printk(KERN_INFO "DNPMEM nb Response Updated,  Data Id=%d \n",data->id);
 bypass:          
@@ -382,8 +440,6 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     struct xen_netif_rx_request *req;
     struct gnttab_map_grant_ref *tmp_map_ops;
     struct page **tmp_page_mapped; 
-    unsigned long tmp_mfn_arr[60];
-    void *addr;
     uint16_t tmpdnpid[60];
         
     //Function body:
@@ -496,8 +552,7 @@ int dnp_buffer_kthread(void *data){
                 if (kthread_should_stop())
 			break;
                 if(RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
-                        dnp_map_frontend_buffer(vif);                        
-                
+                        dnp_map_frontend_buffer(vif);                                        
     }
     return 0;                    
 }

@@ -5,13 +5,9 @@
       <in>defines.h</in>
       <in>ethtool.c</in>
       <in>igbvf.h</in>
-      <in>igbvf.mod.c</in>
       <in>mbx.c</in>
       <in>mbx.h</in>
       <in>netdev.c</in>
-      <in>netdev_1.c</in>
-      <in>netdev_modBKP.c</in>
-      <in>netdev_modBKP2.c</in>
       <in>netdev_stg1.c</in>
       <in>regs.h</in>
       <in>vf.c</in>

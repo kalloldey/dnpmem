@@ -93,6 +93,11 @@ struct netbk_rx_meta {
 	int gso_size;
 };
 
+struct dnp_counters{
+       unsigned vm_id;
+       unsigned long failed_maps;
+       unsigned long num_rcvd;
+};
 #define MAX_PENDING_REQS 256
 
 // dnptwo  <<<<<<<<<<
