@@ -1,0 +1,5 @@
+[29-4-2014:2339] sysfs file now in place, can set some variable and can print it
+	packet flow is ok to and from; both way ping
+	git bkp done
+	Problem: Kernel crash still present, performance is still bad->300 MBps
+	Todo: switch of VF to VM automation,kernel crush remove, performance improvement

@@ -94,7 +94,7 @@ struct netbk_rx_meta {
 };
 
 struct dnp_counters{
-       unsigned vm_id;
+       int vm_id;
        unsigned long failed_maps;
        unsigned long num_rcvd;
 };
@@ -228,7 +228,9 @@ struct xenvif {
 
         int assigned_dnpVF_ID;  // will be -1 if no dnfvf currently have;
 // dnptwo  <<<<<<<<<<
-	struct task_struct *buffer_thread;
+        struct net_device *dnp_net_device;  /*[Kallol]Introduce another data type to keep the info 
+                                                * of VF that can be assigned to this backend*/
+        struct task_struct *buffer_thread;
         wait_queue_head_t waitq;
         //DNP_MAX_NR_PAGE is the limit ..    
         unsigned long skb_with_driver;  
@@ -253,15 +255,9 @@ struct xenvif {
 
 struct backend_info {
 	struct xenbus_device *dev;
-	struct xenvif *vif;
- #ifdef DNP_XEN       
-        struct net_device *dnp_net_device;  /*[Kallol]Introduce another data type to keep the info 
-                                                * of VF that can be assigned to this backend*/
-#endif        
+	struct xenvif *vif;      
 	enum xenbus_state frontend_state;
-        int mode_using;          /*[Kallol] In which mode netback is currently in
-                                 0: No mode specifeid yet, 1: VF assigned, 2:With bridge*/
-	struct xenbus_watch hotplug_status_watch;
+ 	struct xenbus_watch hotplug_status_watch;
 	u8 have_hotplug_status_watch:1;
 };
 
@@ -333,6 +329,7 @@ struct dnp_cb {
 
 
 #define MAX_POSSIBLE_VF 500
+#define MAX_VM  500
 
 struct dnpvf{
         char name[10];          //eth 1 2 3 whatever       
@@ -342,13 +339,13 @@ struct dnpvf{
         u8   fe_dev_addr[6];  //MAC address of this vf        
 };
 
-int associate_dnpvf_with_backend(struct backend_info *);
+int associate_dnpvf_with_backend(struct xenvif *);
 struct xenvif *vfnetdev_to_xenvif(struct net_device *);
 struct net_device *getNetdev(int );
 void updatednpVF(int ,int ,int);
 int dnpvf_can_be_assigned(void);
 void dnp_controller_init(void);
-int backend_allocate_dnpVF(struct backend_info *);
+int backend_allocate_dnpVF(struct xenvif *);
 int vfway_send_pkt_to_guest(struct sk_buff *, struct net_device *, int); //dnptwo modification
 unsigned vfway_xen_netbk_tx_build_gops(struct xen_netbk *);
 void xen_netbk_tx_submit_to_dnpvf(struct xen_netbk *);
@@ -362,6 +359,8 @@ void dnp_map_frontend_buffer(struct xenvif *vif);
 struct sk_buff *dnp_alloc_skb(struct net_device *, unsigned int , int);
 void dnp_free_skb(struct sk_buff *skb, int vfid);
 int dnp_buffer_kthread(void *data);
+void switch_vif_netif(int vmid, int flag);
+void register_vif(struct xenvif *vif);
 // dnptwo  >>>>>>>>>>
 
 #endif //DNP_XEN

@@ -5,6 +5,7 @@
       <in>defines.h</in>
       <in>ethtool.c</in>
       <in>igbvf.h</in>
+      <in>igbvf.mod.c</in>
       <in>mbx.c</in>
       <in>mbx.h</in>
       <in>netdev.c</in>

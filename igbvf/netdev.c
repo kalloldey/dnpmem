@@ -175,6 +175,7 @@ static inline void igbvf_rx_checksum_adv(struct igbvf_adapter *adapter,
 #endif        
 }
 //dnptwo <<<<<<<<<<  
+#if 0
 static phys_addr_t xen_bus_to_phys(dma_addr_t baddr)
 {
         return machine_to_phys(XMADDR(baddr)).paddr;
@@ -187,6 +188,7 @@ static void noinline do_check_dmapage(void *vaddr)
 {
       memset(vaddr,'a',10);
 }
+#endif
 //dnptow >>>>>>>>>>>
 
 /**
@@ -204,7 +206,6 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
 	struct igbvf_buffer *buffer_info;
 	struct sk_buff *skb;
 	unsigned int i;
-        void  *add_dma_way;     
 	int bufsz;
 	i = rx_ring->next_to_use;
 	buffer_info = &rx_ring->buffer_info[i];

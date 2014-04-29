@@ -84,8 +84,6 @@ static int netback_probe(struct xenbus_device *dev,
 				 "allocating backend structure");
 		return -ENOMEM;
 	}
-        be->mode_using=0;  /*[DNP] Initially we marked mode as 1, switch it to 
-                            * 1 or 2 based on VF or bridge based connection */
 	be->dev = dev;        
 	dev_set_drvdata(&dev->dev, be);
 
@@ -256,6 +254,11 @@ static void frontend_changed(struct xenbus_device *dev,
 		backend_create_xenvif(be);
 		if (be->vif)
 			connect(be);
+#ifdef DNP_XEN  
+                be->vif->assigned_dnpVF_ID = -1;
+                be->vif->dnp_net_device = NULL;
+                register_vif(be->vif);                
+#endif
 		break;
 
 	case XenbusStateClosing:
@@ -384,26 +387,7 @@ static void connect(struct backend_info *be)
 		xenbus_dev_fatal(dev, err, "parsing %s/mac", dev->nodename);
 		return;
 	}
-#ifdef DNP_XEN //[DNP-titan: done]
-        err = backend_allocate_dnpVF(be);
-        if(err==-1){  /*[DNP] success part taken care inside function*/
-              be->mode_using=2;  //no vf found to use.. Go with bridge
-              be->vif->assigned_dnpVF_ID=-1;
-              be->dnp_net_device=NULL;
-        }
-                       
-        //Change mac
-        //be->dnp_net_device has already had assignment to netdev
-        if(unlikely(!be->dnp_net_device)){
-              printk(KERN_INFO "[DNP]{Changing MAC} Not found netdev--Error\n");
-        }else{
-              dvfa_set_mac(be->dnp_net_device,be->vif->fe_dev_addr);  //[KALLOL]  --our Mac
-              printk(KERN_INFO "[DNPMEM]{Changing MAC} Called driver to set MAC\n");
-               
-        }
-#else
-        be->mode_using=2;        
-#endif        
+      
 	xen_net_read_rate(dev, &be->vif->credit_bytes,
 			  &be->vif->credit_usec);
 	be->vif->remaining_credit = be->vif->credit_bytes;
@@ -418,13 +402,7 @@ static void connect(struct backend_info *be)
 	} else {
 		be->have_hotplug_status_watch = 1;
 	}
-#ifdef DNP_XEN        
-        if(be->vif->assigned_dnpVF_ID!=-1){
-                wake_up(&be->vif->waitq);        
-        }
-#endif 
-	netif_wake_queue(be->vif->dev);
-        
+	netif_wake_queue(be->vif->dev);        
 }
 
 

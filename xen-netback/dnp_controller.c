@@ -24,7 +24,10 @@
  * @return net_device structure to a particular vf.
  */
 struct dnpvf *alldnpVFs[MAX_POSSIBLE_VF];
-static int total_VF,total_VF_Assigned;
+static int total_VF, total_VF_Assigned;
+
+struct xenvif *allXenVifs[MAX_VM];
+static int total_VM, effective_VM;
 
 struct dnp_counters *dnpctrs=NULL;
 struct kobject *dnp_kobj;
@@ -32,19 +35,21 @@ struct kobject *dnp_kobj;
 static ssize_t vmswitch_show(struct kobject *kobj, struct kobj_attribute *attr,
                         char *buf)
 {
-        return sprintf(buf, "%u\n",0U);
+        return sprintf(buf, "%d\n",0);
 }
 
 static ssize_t vmswitch(struct kobject *kobj, struct kobj_attribute *attr,
                         const char *buf,size_t count)
 {
-        int vmid = *((int *)buf);
-        if(count <= 0 || count > 6 || vmid < 0)
-            return -EINVAL;
-       //do the switching here
-        return 0;
+        int vmid;
+        sscanf(buf, "%d", &vmid);
+
+        //dnpctrs->vm_id = vmid;
+        printk(KERN_INFO "DNPMEM nb going for vm-nif-switch, vmid= %d\n",vmid);
+        switch_vif_netif(vmid,1);
+        return count;
 }
-static struct kobj_attribute dnpctrs_vmswitch_attribute = __ATTR(dnp_switch,0644,vmswitch_show,vmswitch);
+static struct kobj_attribute dnpctrs_vmswitch_attribute = __ATTR(dnp_switch,0666,vmswitch_show,vmswitch);
 
 static ssize_t failed_maps_show(struct kobject *kobj, struct kobj_attribute *attr,
                         char *buf)
@@ -71,18 +76,19 @@ static struct attribute *attrs[] = {
 static struct attribute_group attr_group = {
         .attrs = attrs,
 };
-
+#if 0
 static void noinline do_check_kpage(void *vaddr)
 {    
     char *a = (char *) vaddr;
     memset(a,'a',10);
 }
+#endif
 
-int associate_dnpvf_with_backend(struct backend_info *be){  
-
+int associate_dnpvf_with_backend(struct xenvif *vif){  
+ 
     int i;
     struct igbvf_adapter *tmp;
-
+    
     for(i=0;i<total_VF;i++){
         if(alldnpVFs[i]->vm_domid!=-1)
             continue;
@@ -90,52 +96,49 @@ int associate_dnpvf_with_backend(struct backend_info *be){
             break;
     }
     if(i==total_VF){
-        printk(KERN_INFO "[Error] no vf is there to assign but still you called %s!",__func__);
+        printk(KERN_INFO "[Error] no vf is there to assign but still you called %s!\n",__func__);
         return -1;
     }
     //Update all the states here ...
     //two entry to update on backend info ..one on vif attached with be
-    be->dnp_net_device=alldnpVFs[i]->dnp_netdev;
-    be->mode_using=1; //can use VF mode  
-    be->vif->assigned_dnpVF_ID=i; //check using this value -1 or other value
+    vif->dnp_net_device=alldnpVFs[i]->dnp_netdev;
+    vif->assigned_dnpVF_ID=i; //check using this value -1 or other value
 // dnptwo  <<<<<<<<<<    
-    be->vif->dnp_map_ops = kmalloc(sizeof(be->vif->dnp_map_ops[0]) * DNP_MAX_NR_PAGE, GFP_KERNEL);
-    be->vif->page_mapped = (struct page **)kmalloc(sizeof (be->vif->page_mapped[0]) * DNP_MAX_NR_PAGE, GFP_KERNEL);
-    be->vif->dnp_mapped_id = kmalloc(sizeof(uint16_t) * DNP_MAX_NR_PAGE, GFP_KERNEL);
+    vif->dnp_map_ops = kmalloc(sizeof(vif->dnp_map_ops[0]) * DNP_MAX_NR_PAGE, GFP_KERNEL);
+    vif->page_mapped = (struct page **)kmalloc(sizeof (vif->page_mapped[0]) * DNP_MAX_NR_PAGE, GFP_KERNEL);
+    vif->dnp_mapped_id = kmalloc(sizeof(uint16_t) * DNP_MAX_NR_PAGE, GFP_KERNEL);
 
-    be->vif->buffer_thread = kthread_create(dnp_buffer_kthread,
-                                            (void *)be->vif,
+    vif->buffer_thread = kthread_create(dnp_buffer_kthread,
+                                            (void *)vif,
                                             "dnp_buffer/%u",i);    
-    if (IS_ERR(be->vif->buffer_thread)) {
+    if (IS_ERR(vif->buffer_thread)) {
 	printk(KERN_ALERT "DNPMEM Buffer thread() creation fails \n");
     }
-    MASSERT(be->vif->dnp_map_ops ||be->vif->page_mapped||    be->vif->dnp_mapped_id) //not happened FINE
+    MASSERT(vif->dnp_map_ops ||vif->page_mapped||vif->dnp_mapped_id) //not happened FINE
     
-    init_waitqueue_head(&be->vif->waitq);
-    be->vif->leader = 0;
-    be->vif->follower = 0; 
-    be->vif->fullflag = false;
+    init_waitqueue_head(&vif->waitq);
+    vif->leader = 0;
+    vif->follower = 0; 
+    vif->fullflag = false;
     
-    be->vif->skb_with_driver = 0;
-    be->vif->skb_freed = 0;
-    be->vif->skb_receive_count = 0;    
+    vif->skb_with_driver = 0;
+    vif->skb_freed = 0;
+    vif->skb_receive_count = 0;    
     
-    wake_up_process(be->vif->buffer_thread);   
+    wake_up_process(vif->buffer_thread);   
 // dnptwo  >>>>>>>>>>
     
     //Two entry to be updated on alldnpVFs
-    alldnpVFs[i]->vm_domid=be->vif->domid;  
-    alldnpVFs[i]->xennetvif=be->vif;
+    alldnpVFs[i]->vm_domid=vif->domid;  
+    alldnpVFs[i]->xennetvif=vif;
     
     //Two entry to update on igbvf respective to this vf
-    tmp=netdev_priv(be->dnp_net_device);        
+    tmp=netdev_priv(vif->dnp_net_device);        
     tmp->deliver_packet_to_netback = vfway_send_pkt_to_guest;
     tmp->alloc_dnpskb = dnp_alloc_skb;
     tmp->free_dnpskb = dnp_free_skb;  
     wmb();  //be->dnp_net_device use this
-    set_restart_igbvf(be->dnp_net_device,i) ; //FINE -16.03_2148
-    
-
+    set_restart_igbvf(vif->dnp_net_device,i) ; //FINE -16.03_2148    
     total_VF_Assigned++;        
 
  //   EXIT();
@@ -192,6 +195,8 @@ void dnp_controller_init(void){
     //Temporary Hack: use the available vfs name hardcoded ... remove it as early as possible
     //take two vf .. eth4 and eth5 .. total vf=2;
   //  ENTER();
+    total_VM = 0;
+    effective_VM = 0;
     total_VF=2;
     total_VF_Assigned=0;
     alldnpVFs[0]=(struct dnpvf *)kzalloc(sizeof(struct dnpvf),GFP_KERNEL);
@@ -338,7 +343,6 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         struct gnttab_unmap_grant_ref unmap[1];
         struct page *pp[1];
         int ret;
-        unsigned long tmp_mfn;
         ENTER();
         vif = vfnetdev_to_xenvif(getNetdev(netdev_index));
         if(!vif){
@@ -557,11 +561,11 @@ int dnp_buffer_kthread(void *data){
     return 0;                    
 }
 
-int backend_allocate_dnpVF(struct backend_info *be){
+int backend_allocate_dnpVF(struct xenvif *vif ){
     
     ENTER();
     if(dnpvf_can_be_assigned()){        
-        return associate_dnpvf_with_backend(be);
+        return associate_dnpvf_with_backend(vif);
     }
     else
         return -1;
@@ -573,4 +577,52 @@ int vf_connect(struct net_device *dnpvf, unsigned long tx_ring_ref,
     //change the vfs mac address same as the VMs mac address
     //call the api to modify the interrupt
 	return 0;
+}
+
+/*
+ * switch_vif_netif: Will be called to switch a VM from VF to bridge and vice versa
+ * vmid: id of the vm
+ * flag: 1 just flipflop the present settings,
+ *       2 means VF to Bridge
+ *       3 means bridge to VF
+ */
+void switch_vif_netif(int vmid, int flag){
+    
+        struct xenvif *vif = NULL;
+        int err;
+        vif = allXenVifs[vmid];
+        if (vif->assigned_dnpVF_ID !=-1 && flag ==3){
+            printk(KERN_INFO "[DNPMEM] nb Already have VF .. nothing to do\n");
+            return; //already present
+        }
+        
+        if (vif->assigned_dnpVF_ID ==-1 && flag ==2){
+            printk(KERN_INFO "[DNPMEM] nb Already have Bridge .. nothing to do\n");
+            return; //already present
+        }
+        if (flag == 1 && vif->assigned_dnpVF_ID ==-1) {
+                //VF alloc code
+                err = backend_allocate_dnpVF(vif);
+                if(err==-1){  /*[DNP] success part taken care inside function*/
+                        printk(KERN_INFO "[DNPMEM] nb Error in allocating VF to VM\n"); 
+                        vif->assigned_dnpVF_ID=-1;
+                        vif->dnp_net_device=NULL;
+                }else{
+                        dvfa_set_mac(vif->dnp_net_device,vif->fe_dev_addr);  //[KALLOL]  --our Mac
+                        printk(KERN_INFO "[DNPMEM] nb {Changing MAC} Called driver to set MAC\n");               
+                        wake_up(&vif->waitq);                                
+                }
+                 printk(KERN_INFO "[DNPMEM] nb SWITHCED TO BRIDGE DONE ###### VM ID= %d\n",vmid);
+                return;
+        }
+        if (flag == 1 && vif->assigned_dnpVF_ID !=-1) {
+                //switch to bridge .. before that disassociate the VF from VM
+            //TODO
+        }
+        
+}
+
+void register_vif(struct xenvif *vif){
+    allXenVifs[(int)vif->domid]=vif;
+    total_VM = total_VM > vif->domid ? total_VM: vif->domid;
 }

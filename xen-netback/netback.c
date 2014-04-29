@@ -133,16 +133,6 @@ struct xen_netbk {
 static struct xen_netbk *xen_netbk;
 static int xen_netbk_group_nr;
 
-
-// dnptwo  <<<<<<<<<< 
-#ifdef DNP_XEN 
-static inline int idxmap(unsigned int idx){
-    return idx & (DNP_MAX_NR_PAGE - 1);
-}
-#endif
-// dnptwo  >>>>>>>>>>
-
-
 /*
  * If head != INVALID_PENDING_RING_IDX, it means this tx request is head of
  * one or more merged tx requests, otherwise it is the continuation of
@@ -749,16 +739,15 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 					flags);
 
 		if (netbk->meta[npo.meta_cons].gso_size && !vif->gso_prefix) {
+			struct xen_netif_extra_info *gso =
+				(struct xen_netif_extra_info *)
+				RING_GET_RESPONSE(&vif->rx,
+						  vif->rx.rsp_prod_pvt++);
 #ifdef DNP_XEN
                         if(vif->assigned_dnpVF_ID !=-1){
                                 printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--6 \n");                
                         }
 #endif
-			struct xen_netif_extra_info *gso =
-				(struct xen_netif_extra_info *)
-				RING_GET_RESPONSE(&vif->rx,
-						  vif->rx.rsp_prod_pvt++);
-
 			resp->flags |= XEN_NETRXF_extra_info;
 
 			gso->u.gso.size = netbk->meta[npo.meta_cons].gso_size;
@@ -1812,14 +1801,14 @@ static struct xen_netif_rx_response *make_rx_response(struct xenvif *vif,
 					     u16      size,
 					     u16      flags)
 {
+    
+	RING_IDX i = vif->rx.rsp_prod_pvt;
+	struct xen_netif_rx_response *resp;
 #ifdef DNP_XEN
         if(vif->assigned_dnpVF_ID !=-1){
                 printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--4 \n");                
         }
 #endif
-    
-	RING_IDX i = vif->rx.rsp_prod_pvt;
-	struct xen_netif_rx_response *resp;
 
 	resp = RING_GET_RESPONSE(&vif->rx, i);
 	resp->offset     = offset;
