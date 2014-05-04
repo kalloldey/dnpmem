@@ -1,0 +1,1 @@
+cmd_/home/kallol/dev/igbvf/igbvf.o := ld -m elf_x86_64   -r -o /home/kallol/dev/igbvf/igbvf.o /home/kallol/dev/igbvf/vf.o /home/kallol/dev/igbvf/mbx.o /home/kallol/dev/igbvf/ethtool.o /home/kallol/dev/igbvf/netdev.o 

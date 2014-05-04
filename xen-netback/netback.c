@@ -43,93 +43,6 @@
 static unsigned int fatal_skb_slots = FATAL_SKB_SLOTS_DEFAULT;
 module_param(fatal_skb_slots, uint, 0444);
 
-#if 0//shfited to common.h so that others can also use
-/*
- * To avoid confusion, we define XEN_NETBK_LEGACY_SLOTS_MAX indicating
- * the maximum slots a valid packet can use. Now this value is defined
- * to be XEN_NETIF_NR_SLOTS_MIN, which is supposed to be supported by
- * all backend.
- */
-#define XEN_NETBK_LEGACY_SLOTS_MAX XEN_NETIF_NR_SLOTS_MIN
-
-typedef unsigned int pending_ring_idx_t;
-#define INVALID_PENDING_RING_IDX (~0U)
-
-struct pending_tx_info {
-	struct xen_netif_tx_request req; /* coalesced tx request */
-	struct xenvif *vif;
-	pending_ring_idx_t head; /* head != INVALID_PENDING_RING_IDX
-				  * if it is head of one or more tx
-				  * reqs
-				  */
-};
-
-struct netbk_rx_meta {
-	int id;
-	int size;
-	int gso_size;
-};
-
-#define MAX_PENDING_REQS 256
-
-/* Discriminate from any valid pending_idx value. */
-#define INVALID_PENDING_IDX 0xFFFF
-
-#define MAX_BUFFER_OFFSET PAGE_SIZE
-
-/* extra field used in struct page */
-union page_ext {
-	struct {
-#if BITS_PER_LONG < 64
-#define IDX_WIDTH   8
-#define GROUP_WIDTH (BITS_PER_LONG - IDX_WIDTH)
-		unsigned int group:GROUP_WIDTH;
-		unsigned int idx:IDX_WIDTH;
-#else
-		unsigned int group, idx;
-#endif
-	} e;
-	void *mapping;
-};
-struct xen_netbk {
-	wait_queue_head_t wq;
-	struct task_struct *task;
-
-	struct sk_buff_head rx_queue;
-	struct sk_buff_head tx_queue;
-
-	struct timer_list net_timer;
-
-	struct page *mmap_pages[MAX_PENDING_REQS];
-
-	pending_ring_idx_t pending_prod;
-	pending_ring_idx_t pending_cons;
-	struct list_head net_schedule_list;
-
-	/* Protect the net_schedule_list in netif. */
-	spinlock_t net_schedule_list_lock;
-
-	atomic_t netfront_count;
-
-	struct pending_tx_info pending_tx_info[MAX_PENDING_REQS];
-	/* Coalescing tx requests before copying makes number of grant
-	 * copy ops greater or equal to number of slots required. In
-	 * worst case a tx request consumes 2 gnttab_copy.
-	 */
-	struct gnttab_copy tx_copy_ops[2*MAX_PENDING_REQS];
-
-	u16 pending_ring[MAX_PENDING_REQS];
-
-	/*
-	 * Given MAX_BUFFER_OFFSET of 4096 the worst case is that each
-	 * head/fragment page uses 2 copy operations because it
-	 * straddles two buffers in the frontend.
-	 */
-	struct gnttab_copy grant_copy_op[2*XEN_NETIF_RX_RING_SIZE];
-	struct netbk_rx_meta meta[2*XEN_NETIF_RX_RING_SIZE];
-};
-#endif
-
 static struct xen_netbk *xen_netbk;
 static int xen_netbk_group_nr;
 
@@ -645,15 +558,14 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 		vif = netdev_priv(skb->dev);
 #ifdef DNP_XEN
                 if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to resole this
-                    printk(KERN_INFO "DNPMEM nb In Old Code Path--1 \n");
+                //    printk(KERN_INFO "DNPMEM nb In Old Code Path--1 \n");
                     continue;
                 }
 #endif                
 		nr_frags = skb_shinfo(skb)->nr_frags;               
 /*[DNP][metis]
  *  skb->cb: Control buffer. Free for use by every layer. Put private vars here
- */
-  //              printk(KERN_INFO "[DNP-metis] nr_frags= %d\n",nr_frags);
+ */  
 		sco = (struct skb_cb_overlay *)skb->cb;
      /*           if(sco < 0x10000){
                     MASSERT(0);
@@ -679,15 +591,14 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 	BUG_ON(npo.copy_prod > ARRAY_SIZE(netbk->grant_copy_op));
 	ret = HYPERVISOR_grant_table_op(GNTTABOP_copy, &netbk->grant_copy_op,
 					npo.copy_prod);
-	BUG_ON(ret != 0);
- //       printk(KERN_INFO "DNP Done till grant copy\n");
+	BUG_ON(ret != 0); 
 	while ((skb = __skb_dequeue(&rxq)) != NULL) {
 		sco = (struct skb_cb_overlay *)skb->cb;
 
 		vif = netdev_priv(skb->dev);
 #ifdef DNP_XEN
                 if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to resole this
-                    printk(KERN_INFO "DNPMEM nb In Old Code Path--2 \n");
+                   // printk(KERN_INFO "DNPMEM nb In Old Code Path--2 \n");
                     xenvif_put(vif);
                     continue;
                 }
@@ -699,7 +610,7 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 		if (netbk->meta[npo.meta_cons].gso_size && vif->gso_prefix) {
 #ifdef DNP_XEN
         if(vif->assigned_dnpVF_ID !=-1){
-                printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--5 \n");                
+             //   printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--5 \n");                
         }
 #endif                    
 			resp = RING_GET_RESPONSE(&vif->rx,
@@ -745,7 +656,7 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 						  vif->rx.rsp_prod_pvt++);
 #ifdef DNP_XEN
                         if(vif->assigned_dnpVF_ID !=-1){
-                                printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--6 \n");                
+                             //   printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--6 \n");                
                         }
 #endif
 			resp->flags |= XEN_NETRXF_extra_info;
@@ -1675,10 +1586,8 @@ static void xen_netbk_tx_submit(struct xen_netbk *netbk)
 			__pskb_pull_tail(skb, target - skb_headlen(skb));
 		}
 
-		skb->dev      = vif->dev;
-                //printk(KERN_INFO "[DNP][metis]Before Call skb->data=%x\n",skb->data);
+		skb->dev      = vif->dev;                
 		skb->protocol = eth_type_trans(skb, skb->dev);
-                //printk(KERN_INFO "[DNP][metis]After Call skb->data=%x\n",skb->data);
 		if (checksum_setup(vif, skb)) {
 			netdev_dbg(vif->dev,
 				   "Can't setup checksum in net_tx_action\n");
@@ -1806,7 +1715,7 @@ static struct xen_netif_rx_response *make_rx_response(struct xenvif *vif,
 	struct xen_netif_rx_response *resp;
 #ifdef DNP_XEN
         if(vif->assigned_dnpVF_ID !=-1){
-                printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--4 \n");                
+              //  printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--4 \n");                
         }
 #endif
 
@@ -1915,7 +1824,7 @@ static int __init netback_init(void)
 	int i;
 	int rc = 0;
 	int group;
-        printk(KERN_INFO "[DNPMEM][START] Xen Netback ===================  2904_1556\n");
+        printk(KERN_INFO "[DNPMEM][START] Xen Netback ================  0205_1556\n");
 	if (!xen_domain())
 		return -ENODEV;
         /* [DNP] Will initialize the dnp controller */

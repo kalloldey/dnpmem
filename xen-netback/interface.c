@@ -84,7 +84,7 @@ static int xenvif_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto drop;
 #ifdef DNP_XEN 
         if(vif->assigned_dnpVF_ID!=-1){
-                printk(KERN_INFO "DNPMEM nb In Old Code Path--3\n");
+              //  printk(KERN_INFO "DNPMEM nb In Old Code Path--3\n");
                 goto drop;
         }
 #endif        

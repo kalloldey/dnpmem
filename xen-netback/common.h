@@ -109,7 +109,7 @@ struct dnp_counters{
 #define DNP_SKB_BUF_REQ(len) (((len) + PAGE_SIZE -1) / PAGE_SIZE )
 
 //keep upper, follower .
-unsigned int freeloc(unsigned int x, unsigned int y, bool flag);
+unsigned long freeloc(unsigned long x, unsigned long y, bool flag);
 // dnptwo  >>>>>>>>>>
 
 /* Discriminate from any valid pending_idx value. */
@@ -241,9 +241,9 @@ struct xenvif {
         struct gnttab_map_grant_ref *dnp_map_ops;
         uint16_t *dnp_mapped_id;
         
-        unsigned int leader;  /* will increase when dom0 will get some page to 
+        unsigned long leader;  /* will increase when dom0 will get some page to 
                                     be mapped to its own address space*/
-        unsigned int follower;  /* will increase when dom0 will use some mapped pages
+        unsigned long follower;  /* will increase when dom0 will use some mapped pages
                                             *  to the driver*/     
         bool fullflag; //will be 1 when leader == follower but queue is full, 0 other wise .. start with 0
 /*        struct sk_buff_head avail_skb;  //the DB of skb

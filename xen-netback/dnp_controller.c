@@ -76,7 +76,7 @@ static struct attribute *attrs[] = {
 static struct attribute_group attr_group = {
         .attrs = attrs,
 };
-#if 0
+#if 1
 static void noinline do_check_kpage(void *vaddr)
 {    
     char *a = (char *) vaddr;
@@ -194,7 +194,6 @@ void dnp_controller_init(void){
      */
     //Temporary Hack: use the available vfs name hardcoded ... remove it as early as possible
     //take two vf .. eth4 and eth5 .. total vf=2;
-  //  ENTER();
     total_VM = 0;
     effective_VM = 0;
     total_VF=2;
@@ -220,6 +219,10 @@ void dnp_controller_init(void){
                printk(KERN_WARNING "Out of memory: %s\n",__func__);
         }
     }
+    if (xen_feature(XENFEAT_auto_translated_physmap))
+          printk(KERN_INFO "KKKKKK AUTO\n");
+    else
+          printk(KERN_INFO "KKKKKK NOPE\n");
 
  //   EXIT();
     /*<-- Temporary hack ends here ... remove it ASAP[03.10.2013]*/        
@@ -232,10 +235,9 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     struct sk_buff *skb = NULL;
     //struct xenvif *vif = vfnetdev_to_xenvif(getNetdev(netdev_index));
     struct xenvif *vif = vfnetdev_to_xenvif(netdevice);
-    unsigned int loc;
+    unsigned long loc;
     int nr_buf;
     struct dnp_cb *tag = NULL;
-  //  ENTER();
 
     if(vif ==NULL){
         MASSERT(0);
@@ -243,17 +245,16 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     }
 //    printk(KERN_INFO "%s %d:%s vif leader=%u, vif follwer=%u  \n",__FILE__,__LINE__,__func__,vif->leader, vif->follower);
     if(freeloc(vif->leader, vif->follower, vif->fullflag) == DNP_MAX_NR_PAGE){
-        printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
-      //  MASSERT(0)
+       // printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
         if(RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
                 wake_up(&vif->waitq);        
         return NULL;
     }
 
-    skb = alloc_skb(DNP_SKB_SIZE, GFP_ATOMIC);  //remember to kfree_skb end     
-    if(!skb){
-       // MASSERT(0)
-        printk(KERN_ERR "DNPMEM nb alloc skb fail: Not able to allocate skb\n");
+   // skb = netdev_alloc_skb_ip_align(netdevice,DNP_SKB_SIZE);  //remember to kfree_skb end     
+    skb = alloc_skb(DNP_SKB_SIZE, GFP_ATOMIC);
+    if(unlikely(!skb)){
+       // printk(KERN_ERR "DNPMEM nb alloc skb fail: Not able to allocate skb\n");
         return NULL;
     }
     
@@ -262,7 +263,7 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     MASSERT(nr_buf == 1)
     if (nr_buf > MAX_SKB_FRAGS){
         MASSERT(0)
-         printk(KERN_ERR "DNPMEM nb allocate skb nr_buf more than 1\n");
+      //   printk(KERN_ERR "DNPMEM nb allocate skb nr_buf more than 1\n");
          return NULL;
     }
 
@@ -273,7 +274,7 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     skb_shinfo(skb)->frags[0].page_offset = 0;        
     skb_shinfo(skb)->frags[0].size = PAGE_SIZE; 
     skb_shinfo(skb)->nr_frags=1;
-    skb->dev = netdevice;
+    skb->dev = netdevice; // Not needed anymore
 #if 0    
     addr = kmap_atomic(skb_shinfo(skb)->frags[0].page.p );
     do_check_kpage(addr);
@@ -303,7 +304,7 @@ void dnp_free_skb(struct sk_buff *skb, int vfid){ //DONE 80
     struct xenvif *vif = NULL;
     struct dnp_cb *dnc = NULL;    
     vif = alldnpVFs[vfid]->xennetvif;  //sure ..
-    FLOW();
+   // FLOW();
     /*so this page pointer will be added to the top of leader
      * leader will increased by nr of pages with skb
      * follower will keep same
@@ -318,7 +319,7 @@ void dnp_free_skb(struct sk_buff *skb, int vfid){ //DONE 80
     kfree_skb(skb);
 }
 
-unsigned int freeloc(unsigned int x, unsigned int y, bool flag){
+unsigned long freeloc(unsigned long x, unsigned long y, bool flag){
     if(INCR(x, 0) == INCR(y, 0)){
         if(flag)
                 return 0; //flag == 1 means that though x==y queue is full
@@ -343,7 +344,8 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         struct gnttab_unmap_grant_ref unmap[1];
         struct page *pp[1];
         int ret;
-        ENTER();
+        unsigned long vaddr;
+//        ENTER();
         vif = vfnetdev_to_xenvif(getNetdev(netdev_index));
         if(!vif){
             MASSERT(0)
@@ -367,59 +369,56 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         else
                 flags = 0;                       
 //        printk(KERN_INFO "DNPMEM nb, VFWAY req prod=%u req cons=%u resp prod=%u in req unconsumed=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
-       // tmp_mfn = pfn_to_mfn(page_to_pfn(data->pgad));
 #if 0
         if(data->pgad){
                 void *addr = kmap_atomic((struct page*)data->pgad );
                 do_check_kpage(addr);
                 kunmap_atomic(addr);            
         }
-#endif                    
-        pp[0]=(struct page *)skb_shinfo(skb)->frags[0].page.p;//data->pgad;        
+#endif       
+        BUG_ON(skb_shinfo(skb)->frags[0].page.p != (struct page *)data->pgad);
+        vaddr=(unsigned long)pfn_to_kaddr(page_to_pfn(skb_shinfo(skb)->frags[0].page.p));             
         gnttab_set_unmap_op(&unmap[0],
-                (unsigned long)pfn_to_kaddr(page_to_pfn(skb_shinfo(skb)->frags[0].page.p)),
+                vaddr,
                 GNTMAP_host_map,
                 data->handle);
-   
+        pp[0]=virt_to_page(vaddr); 
         ret = gnttab_unmap_refs(unmap, NULL,pp,1 );
+        
         if(ret)
             printk(KERN_INFO "DNPMEM nb, Error In Ring UNMAP\n");
-        MASSERT(ret == 0)
         if (unlikely(unmap[0].status != 0)) {
                 printk(KERN_INFO "DNPMEM nb, Not UNMAPPED correctly status=%d \n", unmap[0].status);
-        }                
-                
+                BUG_ON(1);
+        }                      
         resp = RING_GET_RESPONSE(&vif->rx, vif->rx.rsp_prod_pvt);
 	resp->offset     = 0;
 	resp->flags      = flags;
 	resp->id         = data->id;
 	resp->status     = (s16)skb->len; //DOUBT. correct ?? lets proceed with this ..
         vif->rx.rsp_prod_pvt++;
-        printk(KERN_INFO "DNPMEM nb, VFWAY reqP=%u reqC=%u resp-P=%u req_to_consm=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));        
-       // printk(KERN_INFO "DNPMEM nb, RING RSP Producer Increased #################### \n");
-  /*      printk(KERN_INFO "DNPMEM nb , vfway mfn BEF unmap = %lu,\
-                        mfn AFT unmap=%lu\n", tmp_mfn,\
-                        pfn_to_mfn(page_to_pfn(data->pgad)));  */     
-   
+      //  printk(KERN_INFO "DNPMEM nb, VFWAY reqP=%u reqC=%u resp-P=%u req_to_consm=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));        
+      
+#if 1  
         if(skb_shinfo(skb)->frags[0].page.p){
-#if 0
-            void *addr = kmap_atomic((struct page*)(skb_shinfo(skb)->frags[0].page.p));
-            do_check_kpage(addr);
-            kunmap_atomic(addr);            
-#endif            
-            int pgc= page_count((struct page *)(skb_shinfo(skb)->frags[0].page.p));            
-            printk(KERN_INFO "DNPMEM nb refcount gr8 than %d\n",pgc);
-          //  __free_page((struct page*)(skb_shinfo(skb)->frags[0].page.p));                       
+
+            void *addr = kmap_atomic(skb_shinfo(skb)->frags[0].page.p);
+            BUG_ON(!addr);
+          //  do_check_kpage(addr);
+            kunmap_atomic(addr);                       
+//            int pgc= page_count((struct page *)(skb_shinfo(skb)->frags[0].page.p));            
+//            printk(KERN_INFO "DNPMEM nb refcount gr8 than %d\n",pgc);                               
         }
         else
             MASSERT(0)                   
+#endif 
+       __free_page(skb_shinfo(skb)->frags[0].page.p);
+       skb_shinfo(skb)->nr_frags=0;
        kfree_skb(skb);     
        RING_PUSH_RESPONSES_AND_CHECK_NOTIFY(&vif->rx, ret);
         if(ret)
             notify_remote_via_irq(vif->irq);
        dnpctrs->num_rcvd++;
-        //RING_PUSH_RESPONSES(&vif->rx);
-        //printk(KERN_INFO "DNPMEM nb Response Updated,  Data Id=%d \n",data->id);
 bypass:          
 	return NETDEV_TX_OK;
 /*
@@ -439,7 +438,7 @@ bypass:
 void dnp_map_frontend_buffer(struct xenvif *vif){
     
     //Declarations:
-    unsigned int current_mapped,free_loc, i, req_avail, loc, ci;
+    unsigned long current_mapped,free_loc, i, req_avail, loc, ci;
     RING_IDX cons, prods;
     struct xen_netif_rx_request *req;
     struct gnttab_map_grant_ref *tmp_map_ops;
@@ -462,7 +461,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     cons = vif->rx.req_cons ;
     prods = vif->rx.sring->req_prod;
     
-    printk(KERN_INFO "DNPMEM nb, DMF req prod=%u req cons=%u resp prod=%u in req unconsumed=%d\n",prods,cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
+//    printk(KERN_INFO "DNPMEM nb, DMF req prod=%u req cons=%u resp prod=%u in req unconsumed=%d\n",prods,cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
     if(!RING_HAS_UNCONSUMED_REQUESTS(&vif->rx)){
         //printk(KERN_INFO "DNPMEM nb NO REQUEST In Ring .. So Return From Here \n");
         return;
@@ -484,7 +483,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
        // tmp_mfn_arr[i] = pfn_to_mfn(page_to_pfn(tmp_page_mapped[i]));
         MASSERT(tmp_page_mapped[i]);
         if (tmp_page_mapped[i] == NULL) {                
-                printk(KERN_INFO "netback  Error:: No page to allocate in map\n");
+              //  printk(KERN_INFO "netback  Error:: No page to allocate in map\n");
                 break;
         }
     }
@@ -507,9 +506,8 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
 
     if(free_loc!=0){        
         int ret = gnttab_map_refs(tmp_map_ops, NULL, tmp_page_mapped, free_loc);
-        printk(KERN_INFO "DNPMEM nb, gntmap done\n");
         if(ret){
-              printk(KERN_INFO "map error %d\n",ret);
+             // printk(KERN_INFO "map error %d\n",ret);
 	      BUG_ON(ret);
         }  
         WARN_ON(ret);
@@ -517,7 +515,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     ci=0;
     for(i =0 ;i<free_loc; i++){  
         if (unlikely(tmp_map_ops[i].status != 0)) {        
-                printk(KERN_INFO "DNPMEM nb, Not mapped correctly status=%d \n",tmp_map_ops[i].status);
+               printk(KERN_INFO "DNPMEM nb, Not mapped correctly status=%d \n",tmp_map_ops[i].status);
         }else{
                 loc = INCR(vif->leader, ci);
                 vif->page_mapped[loc] = tmp_page_mapped[i];         
@@ -539,7 +537,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     vif->fullflag =  vif->follower == INCR(vif->leader , ci)? true:false;
     vif->leader = INCR(vif->leader , ci);
     //no need to save handle as I will get it from dnp_map_ops     
-    printk(KERN_INFO "DNPMEM nb ,mapbuffer: leader= %u follower=%u map_possibility=%u correct-mapped=%u\n",vif->leader,vif->follower,free_loc,ci);
+ //   printk(KERN_INFO "DNPMEM nb ,mapbuffer: leader= %u follower=%u map_possibility=%u correct-mapped=%u\n",vif->leader,vif->follower,free_loc,ci);
     kfree(tmp_map_ops);
     kfree(tmp_page_mapped);
    // EXIT();
@@ -571,13 +569,6 @@ int backend_allocate_dnpVF(struct xenvif *vif ){
         return -1;
 }
 
-
-int vf_connect(struct net_device *dnpvf, unsigned long tx_ring_ref,
-		   unsigned long rx_ring_ref, unsigned int evtchn){
-    //change the vfs mac address same as the VMs mac address
-    //call the api to modify the interrupt
-	return 0;
-}
 
 /*
  * switch_vif_netif: Will be called to switch a VM from VF to bridge and vice versa

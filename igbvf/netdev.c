@@ -27,7 +27,7 @@
   Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
 
 *******************************************************************************/
-
+#define HD 0
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
@@ -220,9 +220,25 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
 
 		if (adapter->rx_ps_hdr_size && !buffer_info->page_dma) {
 #ifdef DNP_XEN  //done
-                    if(adapter->dnpvf_id!=-1){
-                        printk(KERN_ALERT "DNPMEM ig IT SHOULD NOT COME HERE BUT COMING !!!!\n");                      
-                    }   
+                        if(adapter->dnpvf_id!=-1){
+                          //    printk(KERN_ALERT "DNPMEM ig CORRECT\n");
+                        printk(KERN_ALERT "DNPMEM ig IT SHOULD NOT COME HERE BUT COMING !!!!\n");
+                        //BUG_ON(1);                            
+                                skb = adapter->alloc_dnpskb(netdev,bufsz, adapter->dnpvf_id);       
+                                if (!skb){
+                        //    adapter->alloc_rx_buff_failed++;
+                                   goto no_buffers;                            
+                                }                                                
+                                buffer_info->skb = skb;
+                                buffer_info->page = skb_shinfo(skb)->frags[0].page.p;
+                                buffer_info->page_offset = skb_shinfo(skb)->frags[0].page_offset;
+                                buffer_info->page_dma = dma_map_page(&pdev->dev,
+                                                 buffer_info->page,
+                                                 buffer_info->page_offset,       
+                                                 skb_shinfo(skb)->frags[0].size,
+                                                 DMA_FROM_DEVICE);
+                        
+                        }else{   
 #endif                    
 			if (!buffer_info->page) {
 				buffer_info->page = alloc_page(GFP_ATOMIC);
@@ -239,14 +255,17 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
 				             buffer_info->page_offset,
 				             PAGE_SIZE / 2,
 					     DMA_FROM_DEVICE);                   
-		}
+#ifdef DNP_XEN
+                        }
+#endif
+                }
 
 		if (!buffer_info->skb) {
                     
                     // dnptwo  <<<<<<<<<<                    
 #ifdef DNP_XEN  //done
                     if(adapter->dnpvf_id!=-1){ //VF is with some VM
-
+                        printk(KERN_ALERT "DNPMEM ig non HD PLACE ==============================\n");
                         skb = adapter->alloc_dnpskb(netdev,bufsz, adapter->dnpvf_id);
        
                         if (!skb){
@@ -285,11 +304,6 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
 #ifdef DNP_XEN
                     }
 #endif                         
-                        
-                        //DNP-xen
-                        //printk(KERN_INFO "[DNP-metis][skb is null] buffer_info->skb->data %x\n ",skb->data);
-                       // printk(KERN_INFO "[DNP-metis]buffer_info->Page_offset: %d || buffer_info->dma: %x \n ",buffer_info->page_offset,buffer_info->dma);
-                        //--end dnp_xen
                 }
 		/* Refresh the desc even if buffer_addrs didn't change because
 		 * each write-back erases this info. */
@@ -394,23 +408,38 @@ static bool igbvf_clean_rx_irq(struct igbvf_adapter *adapter,
                 if(adapter->dnpvf_id!=-1){
                  //       void *add_dma_way=NULL;                        
                         tag = (struct dnp_cb *)skb->cb; 
-                //        do_check_dmapage(phys_to_virt(xen_bus_to_phys(buffer_info->dma)));
-                        dma_unmap_page(&pdev->dev, 
-                                buffer_info->dma,  
-                                PAGE_SIZE,
-                                DMA_FROM_DEVICE); 
                         DASSERT(skb_shinfo(skb)->frags[0].page.p == (struct page*)tag->pgad);                        
+                //        do_check_dmapage(phys_to_virt(xen_bus_to_phys(buffer_info->dma)));
+                        if (adapter->rx_ps_hdr_size){
+                                dma_unmap_page(&pdev->dev, 
+                                        buffer_info->page_dma,  
+                                        PAGE_SIZE,
+                                        DMA_FROM_DEVICE); 
+                                buffer_info->page_dma = 0;
+                                buffer_info->page = NULL;
+                                printk(KERN_INFO "DNPMEM ig skb_len=%d hlen=%d, length=%d\n", skb->len,hlen,length);
+                                skb->len += hlen+length; //change it back to length                                
+                                skb_shinfo(skb)->frags[0].size =  length; //change it back to length
+                                
+
+                        }else{                        
+                                dma_unmap_page(&pdev->dev, 
+                                        buffer_info->dma,  
+                                        PAGE_SIZE,
+                                        DMA_FROM_DEVICE); 
+                                                
+                        
                //         add_dma_way = phys_to_virt(page_to_phys((struct page *)tag->pgad));
                 //        do_check_kpage(add_dma_way);
-                        skb->len +=length; //BLINDLY hlen
-                        skb_shinfo(skb)->frags[0].size = length; //BLINDLY hlen
-                        
-                        //Below lines added and prev two line commented on 19041616 ..
+                                skb->len += length ;//change it back to length
+                                skb_shinfo(skb)->frags[0].size =  length; //change it back to length
+                                printk(KERN_INFO "DNPMEM ig  Inital Way, skb hlen=%d, length=%d\n", hlen,length);
+                                //Below lines added and prev two line commented on 19041616 ..
                         /*skb->len += length;
 			skb->data_len += length;
                         skb_shinfo(skb)->frags[0].size = length;
 			skb->truesize += PAGE_SIZE;*/
-                        
+                        }
                         goto send_up;  //additional add
                 }else
                 {
@@ -720,7 +749,7 @@ static void igbvf_clean_rx_ring(struct igbvf_ring *rx_ring)
 		if (buffer_info->skb) {
 #ifdef DNP_XEN                    
                         if(adapter->dnpvf_id!=-1){
-                            DENTER();                           
+                           // DENTER();                           
                          /*   dma_unmap_page(&pdev->dev, buffer_info->dma,
                                     PAGE_SIZE,
                                     DMA_FROM_DEVICE);*/
@@ -1468,13 +1497,15 @@ static void igbvf_setup_srrctl(struct igbvf_adapter *adapter)
 	/* Setup buffer sizes */
 	srrctl |= ALIGN(adapter->rx_buffer_len, 1024) >>
 	          E1000_SRRCTL_BSIZEPKT_SHIFT;
-#if 0 //DNP_XEN
+#ifdef DNP_XEN   //Doubtful Point
+#if HD
         if(adapter->dnpvf_id != -1 ){
                 adapter->rx_ps_hdr_size = 128;
 		srrctl |= adapter->rx_ps_hdr_size <<
 		          E1000_SRRCTL_BSIZEHDRSIZE_SHIFT;
 		srrctl |= E1000_SRRCTL_DESCTYPE_HDR_SPLIT_ALWAYS;
         }else{        
+#endif            
 #endif
 	if (adapter->rx_buffer_len < 2048) {
 		adapter->rx_ps_hdr_size = 0;
@@ -1485,8 +1516,10 @@ static void igbvf_setup_srrctl(struct igbvf_adapter *adapter)
 		          E1000_SRRCTL_BSIZEHDRSIZE_SHIFT;
 		srrctl |= E1000_SRRCTL_DESCTYPE_HDR_SPLIT_ALWAYS;
 	}
-#if 0 //DNP_XEN
+#ifdef DNP_XEN
+#if HD        
         }        
+#endif        
 #endif
 	ew32(SRRCTL(0), srrctl);
 }
@@ -2799,7 +2832,7 @@ static int __devinit igbvf_probe(struct pci_dev *pdev,
 	int err, pci_using_dac;   
         //[DNP][metis]
         // printk(KERN_INFO "[DNP][metis] changes in action..igbvf driver_2003_1444\n");
-        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_2804_1456\n");
+        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_0205_1456\n");
 #ifdef DNP_XEN
         printk(KERN_INFO "[DNPMEM][START] ig DNP XEN Flag Enabled\n");
 #else
@@ -3056,7 +3089,6 @@ void set_restart_igbvf(struct net_device *dev, int i){
         igbvf_down(adapter);
         
         adapter->dnpvf_id=i;   
-        DFLOW();
         igbvf_up(adapter);
 	clear_bit(__IGBVF_RESETTING, &adapter->state);
         DEXIT();
