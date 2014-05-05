@@ -16,7 +16,6 @@
  * [03-10-2013] Initial Create
  *
  */
-//#include<linux/skbuff.h>
 #include "common.h"
 #include "igbvf.h"
 /**
@@ -76,7 +75,7 @@ static struct attribute *attrs[] = {
 static struct attribute_group attr_group = {
         .attrs = attrs,
 };
-#if 1
+#if 0
 static void noinline do_check_kpage(void *vaddr)
 {    
     char *a = (char *) vaddr;
@@ -86,7 +85,7 @@ static void noinline do_check_kpage(void *vaddr)
 
 int associate_dnpvf_with_backend(struct xenvif *vif){  
  
-    int i;
+    int i, cn;
     struct igbvf_adapter *tmp;
     
     for(i=0;i<total_VF;i++){
@@ -125,12 +124,32 @@ int associate_dnpvf_with_backend(struct xenvif *vif){
     vif->skb_freed = 0;
     vif->skb_receive_count = 0;    
     
+    vif->use_pageq = 1;
+    if (kfifo_alloc(&vif->page_queue, sizeof(unsigned long)*DNP_MAX_NR_PAGE*2, GFP_ATOMIC)){
+        printk(KERN_INFO "DNPMEM nb, PROBLEM IN CREATING KERNEL QUEUE\n");
+        vif->use_pageq = 0;
+    }else{    
+        for(cn=0;cn <DNP_MAX_NR_PAGE; cn++){
+                unsigned long val;
+                struct page *tmp= alloc_page(GFP_ATOMIC);
+                if (tmp == NULL){
+                        printk(KERN_INFO "DNPMEM nb, PROBLEM IN ALLOCATING 256 pages\n");
+                }
+                val =  (unsigned long)tmp;
+                kfifo_in(&vif->page_queue, &val, sizeof(unsigned long));               
+        }
+        printk(KERN_INFO "DNPMEM nb, Kernel queue with all pages created\n");
+    }
+    
     wake_up_process(vif->buffer_thread);   
 // dnptwo  >>>>>>>>>>
     
     //Two entry to be updated on alldnpVFs
     alldnpVFs[i]->vm_domid=vif->domid;  
     alldnpVFs[i]->xennetvif=vif;
+    
+   // skb_queue_head_init(&vif->avail_skb);
+    //Populate skbs available
     
     //Two entry to update on igbvf respective to this vf
     tmp=netdev_priv(vif->dnp_net_device);        
@@ -230,8 +249,8 @@ void dnp_controller_init(void){
 
 // dnptwo  <<<<<<<<<<
 
-struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length, int netdev_index){
-    
+struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length, int netdev_index) {
+
     struct sk_buff *skb = NULL;
     //struct xenvif *vif = vfnetdev_to_xenvif(getNetdev(netdev_index));
     struct xenvif *vif = vfnetdev_to_xenvif(netdevice);
@@ -239,61 +258,61 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     int nr_buf;
     struct dnp_cb *tag = NULL;
 
-    if(vif ==NULL){
+    if (vif == NULL) {
         MASSERT(0);
         return NULL;
     }
-//    printk(KERN_INFO "%s %d:%s vif leader=%u, vif follwer=%u  \n",__FILE__,__LINE__,__func__,vif->leader, vif->follower);
-    if(freeloc(vif->leader, vif->follower, vif->fullflag) == DNP_MAX_NR_PAGE){
-       // printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
-        if(RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
-                wake_up(&vif->waitq);        
+    //    printk(KERN_INFO "%s %d:%s vif leader=%u, vif follwer=%u  \n",__FILE__,__LINE__,__func__,vif->leader, vif->follower);
+    if (freeloc(vif->leader, vif->follower, vif->fullflag) == DNP_MAX_NR_PAGE) {
+        // printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
+        if (RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
+            wake_up(&vif->waitq);
         return NULL;
     }
 
-   // skb = netdev_alloc_skb_ip_align(netdevice,DNP_SKB_SIZE);  //remember to kfree_skb end     
-    skb = alloc_skb(DNP_SKB_SIZE, GFP_ATOMIC);
-    if(unlikely(!skb)){
-       // printk(KERN_ERR "DNPMEM nb alloc skb fail: Not able to allocate skb\n");
+    skb = netdev_alloc_skb_ip_align(netdevice, DNP_SKB_SIZE); //remember to kfree_skb end     
+    //skb = alloc_skb(DNP_SKB_SIZE, GFP_ATOMIC);
+    if (unlikely(!skb)) {
+        // printk(KERN_ERR "DNPMEM nb alloc skb fail: Not able to allocate skb\n");
         return NULL;
     }
-    
+
     nr_buf = DNP_SKB_BUF_REQ(length);
- 
+
     MASSERT(nr_buf == 1)
-    if (nr_buf > MAX_SKB_FRAGS){
+    if (nr_buf > MAX_SKB_FRAGS) {
         MASSERT(0)
-      //   printk(KERN_ERR "DNPMEM nb allocate skb nr_buf more than 1\n");
-         return NULL;
+        printk(KERN_ERR "DNPMEM nb allocate skb nr_buf more than 1\n");
+        return NULL;
     }
 
     loc = INCR(vif->follower, 0);
     BUG_ON(!vif->page_mapped[loc]);
-        
+
     skb_shinfo(skb)->frags[0].page.p = vif->page_mapped[loc]; //check if we need to any kmap kind of thing here
-    skb_shinfo(skb)->frags[0].page_offset = 0;        
-    skb_shinfo(skb)->frags[0].size = PAGE_SIZE; 
-    skb_shinfo(skb)->nr_frags=1;
+    skb_shinfo(skb)->frags[0].page_offset = 0;
+    skb_shinfo(skb)->frags[0].size = PAGE_SIZE;
+    skb_shinfo(skb)->nr_frags = 1;
     skb->dev = netdevice; // Not needed anymore
 #if 0    
-    addr = kmap_atomic(skb_shinfo(skb)->frags[0].page.p );
+    addr = kmap_atomic(skb_shinfo(skb)->frags[0].page.p);
     do_check_kpage(addr);
     kunmap_atomic(addr);
 #endif    
 
-    tag = (struct dnp_cb *)skb->cb;
+    tag = (struct dnp_cb *) skb->cb;
     tag->id = vif->dnp_mapped_id[loc];
     tag->gref = vif->dnp_map_ops[loc].ref;
     tag->handle = vif->dnp_map_ops[loc].handle;
     tag->pgad = vif->page_mapped[loc];
- //   printk(KERN_INFO "DNPMEM nb %s:%d func=%s | skbCB: id=%u, grantref=%u pageaddr=%p, grant_handle =%u\n",__FILE__,__LINE__,__func__,tag->id,tag->gref,tag->pgad,tag->handle);
-    
+    //   printk(KERN_INFO "DNPMEM nb %s:%d func=%s | skbCB: id=%u, grantref=%u pageaddr=%p, grant_handle =%u\n",__FILE__,__LINE__,__func__,tag->id,tag->gref,tag->pgad,tag->handle);
+
     vif->skb_with_driver++;
- //   printk(KERN_INFO "DNPMEM nb skbs given to driver = %lu,  buffer from loc= %u\n",vif->skb_with_driver, vif->follower);
+    //   printk(KERN_INFO "DNPMEM nb skbs given to driver = %lu,  buffer from loc= %u\n",vif->skb_with_driver, vif->follower);
     //Below two are atomic ..need to ensure
-    vif->fullflag = INCR(vif->follower, 0) == vif->leader ? false: vif->fullflag;
-    vif->follower = INCR(vif->follower, 1);    
-    
+    vif->fullflag = INCR(vif->follower, 0) == vif->leader ? false : vif->fullflag;
+    vif->follower = INCR(vif->follower, 1);
+
     if (!(vif->skb_with_driver % 12))
         wake_up(&vif->waitq);
     //keep some check to kick other buffer getting service and skb freeing service here
@@ -345,6 +364,7 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         struct page *pp[1];
         int ret;
         unsigned long vaddr;
+        unsigned long tmpval;
 //        ENTER();
         vif = vfnetdev_to_xenvif(getNetdev(netdev_index));
         if(!vif){
@@ -361,7 +381,7 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
             goto bypass;
         }
        // printk(KERN_INFO "DNPMEM nb %s:%d func=%s | skbCB: id=%u, grantref=%u pageaddr=%p, grant_handle =%u, page virt addr=%lu\n",__FILE__,__LINE__,__func__,data->id,data->gref,data->pgad,data->handle, (unsigned long)pfn_to_kaddr(page_to_pfn(data->pgad)));
-     if (skb->ip_summed == CHECKSUM_PARTIAL)
+        if (skb->ip_summed == CHECKSUM_PARTIAL)
                 flags |= XEN_NETRXF_csum_blank | XEN_NETRXF_data_validated;
         else if (skb->ip_summed == CHECKSUM_UNNECESSARY)
 
@@ -375,7 +395,12 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
                 do_check_kpage(addr);
                 kunmap_atomic(addr);            
         }
+        /* printk(KERN_INFO "DNPMEM nb,Value on skb frag=%lu, data->pgad=%lu\n",
+                        (unsigned long)skb_shinfo(skb)->frags[0].page.p,
+                        (unsigned long)data->pgad);*/
 #endif       
+        
+
         BUG_ON(skb_shinfo(skb)->frags[0].page.p != (struct page *)data->pgad);
         vaddr=(unsigned long)pfn_to_kaddr(page_to_pfn(skb_shinfo(skb)->frags[0].page.p));             
         gnttab_set_unmap_op(&unmap[0],
@@ -399,12 +424,12 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         vif->rx.rsp_prod_pvt++;
       //  printk(KERN_INFO "DNPMEM nb, VFWAY reqP=%u reqC=%u resp-P=%u req_to_consm=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));        
       
-#if 1  
+#if 0  
         if(skb_shinfo(skb)->frags[0].page.p){
 
             void *addr = kmap_atomic(skb_shinfo(skb)->frags[0].page.p);
             BUG_ON(!addr);
-          //  do_check_kpage(addr);
+           do_check_kpage(addr);
             kunmap_atomic(addr);                       
 //            int pgc= page_count((struct page *)(skb_shinfo(skb)->frags[0].page.p));            
 //            printk(KERN_INFO "DNPMEM nb refcount gr8 than %d\n",pgc);                               
@@ -412,15 +437,23 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         else
             MASSERT(0)                   
 #endif 
-       __free_page(skb_shinfo(skb)->frags[0].page.p);
+       //__free_page(skb_shinfo(skb)->frags[0].page.p); 
+       if(!kfifo_is_full(&vif->page_queue)){
+                tmpval = (unsigned long)skb_shinfo(skb)->frags[0].page.p;
+                kfifo_in(&vif->page_queue, &tmpval, sizeof(unsigned long));  
+       }else{
+                printk(KERN_INFO "DNPMEM nb error Page Queue is full\n");  
+       }
+                           
+       skb_shinfo(skb)->frags[0].page.p = NULL;
        skb_shinfo(skb)->nr_frags=0;
        kfree_skb(skb);     
        RING_PUSH_RESPONSES_AND_CHECK_NOTIFY(&vif->rx, ret);
-        if(ret)
+       if(ret)
             notify_remote_via_irq(vif->irq);
        dnpctrs->num_rcvd++;
 bypass:          
-	return NETDEV_TX_OK;
+        return NETDEV_TX_OK;
 /*
  drop:
 	vif->dev->stats.tx_dropped++;
@@ -479,11 +512,19 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     tmp_map_ops = (struct gnttab_map_grant_ref *)kzalloc(sizeof(struct gnttab_map_grant_ref) * free_loc, GFP_KERNEL);
     tmp_page_mapped =(struct page **)kzalloc(sizeof(unsigned long) * free_loc, GFP_KERNEL);
     for(i=0; i <free_loc ; i++){
-        tmp_page_mapped[i] = alloc_page(GFP_ATOMIC); //remember to free the page
+      //  tmp_page_mapped[i] = alloc_page(GFP_ATOMIC); //remember to free the page
+        if(!kfifo_is_empty(&vif->page_queue)){
+                unsigned long pagetmp;
+                kfifo_out(&vif->page_queue, &pagetmp, sizeof(unsigned long));
+                tmp_page_mapped[i] = (struct page *)pagetmp;
+        }else{
+                printk(KERN_INFO "netback  Error:: page queue empty.. taking page from outside\n");
+                tmp_page_mapped[i] = alloc_page(GFP_ATOMIC); //remember to free the page
+        }
        // tmp_mfn_arr[i] = pfn_to_mfn(page_to_pfn(tmp_page_mapped[i]));
         MASSERT(tmp_page_mapped[i]);
         if (tmp_page_mapped[i] == NULL) {                
-              //  printk(KERN_INFO "netback  Error:: No page to allocate in map\n");
+                printk(KERN_INFO "netback  Error:: No page to allocate in map\n");
                 break;
         }
     }

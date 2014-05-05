@@ -1,3 +1,20 @@
+[05-05-2014:2230] 
+	Memory bug resolved ... Good thing
+	how? page are resolved... so the broken mapping from pfn to mfn is not doing any
+	problem...
+	still one bug is there.. very infrequest bug... occur in vfway_send_path
+	todo: 
+	1. resovld that bug, mostly occur when in vm iperf -c is running
+	2. when releive the vf the mapping from pfn to mfn need to rebuild ... do in the same
+	way balooning code is doing ...
+[04-05-2014:1453] 
+	Bug is still there ..
+	also added provision for selecting HW register writing part, switch in netdev.c
+	rx_ps_hdr_size = 128 or 0
+	for this one #define HD added .. if HD is 0 then it is normal part otherwise
+	it would be on rx_ps_hdr_size would be 0
+	else 128 .. accodring dma and page_dma, hlen will be changed
+
 [29-4-2014:2339] sysfs file now in place, can set some variable and can print it
 	packet flow is ok to and from; both way ping
 	git bkp done

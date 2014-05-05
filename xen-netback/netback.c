@@ -1824,7 +1824,7 @@ static int __init netback_init(void)
 	int i;
 	int rc = 0;
 	int group;
-        printk(KERN_INFO "[DNPMEM][START] Xen Netback ================  0205_1556\n");
+        printk(KERN_INFO "[DNPMEM][START] Xen Netback ================  0505_2126\n");
 	if (!xen_domain())
 		return -ENODEV;
         /* [DNP] Will initialize the dnp controller */

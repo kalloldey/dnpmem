@@ -51,6 +51,7 @@
 #include <linux/etherdevice.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
+#include <linux/kfifo.h>
 
 #include <xen/interface/io/netif.h>
 #include <xen/interface/grant_table.h>
@@ -228,6 +229,8 @@ struct xenvif {
 
         int assigned_dnpVF_ID;  // will be -1 if no dnfvf currently have;
 // dnptwo  <<<<<<<<<<
+        struct kfifo page_queue;
+        int use_pageq;
         struct net_device *dnp_net_device;  /*[Kallol]Introduce another data type to keep the info 
                                                 * of VF that can be assigned to this backend*/
         struct task_struct *buffer_thread;
@@ -246,7 +249,7 @@ struct xenvif {
         unsigned long follower;  /* will increase when dom0 will use some mapped pages
                                             *  to the driver*/     
         bool fullflag; //will be 1 when leader == follower but queue is full, 0 other wise .. start with 0
-/*        struct sk_buff_head avail_skb;  //the DB of skb
+ /*     struct sk_buff_head avail_skb;  //the DB of skb
         struct sk_buff_head rx_queue;  //will keep the skbs may be that will come from the driver
         struct sk_buff_head recycle_skb;  // receive processed now this skb will be again used as avail*/
 // dnptwo  >>>>>>>>>>
