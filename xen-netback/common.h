@@ -103,7 +103,7 @@ struct dnp_counters{
 
 // dnptwo  <<<<<<<<<<
 #define DNP_MAX_NR_PAGE 256  //outstanding always 1024 to be kept
-#define DNP_THRESHOLD  50   //how many buffer the dom0 must hold
+#define DNP_THRESHOLD  256   //how many buffer the dom0 must hold
 #define DNP_SKB_SIZE 0
 //#define FREELOC(x,y) ((x) > (y) ? (DNP_MAX_NR_PAGE - (x)+(y)): ((y) - (x))) //leader,follower ALWAYS
 #define INCR(x,y) (((x) + (y)) & (DNP_MAX_NR_PAGE -1))
@@ -228,7 +228,8 @@ struct xenvif {
 #ifdef DNP_XEN   
 
         int assigned_dnpVF_ID;  // will be -1 if no dnfvf currently have;
-// dnptwo  <<<<<<<<<<
+// dnptwo  <<<<<<<<<<        
+	spinlock_t counter_lock;
         struct kfifo page_queue;
         int use_pageq;
         struct net_device *dnp_net_device;  /*[Kallol]Introduce another data type to keep the info 

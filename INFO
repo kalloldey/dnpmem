@@ -1,3 +1,9 @@
+[07-05-2014:1334]
+	Most of the bug solved
+	TODO:
+	Garbage collect of the pages-> map rebuild for pfn to mfn
+	Switch technique
+
 [05-05-2014:2230] 
 	Memory bug resolved ... Good thing
 	how? page are resolved... so the broken mapping from pfn to mfn is not doing any

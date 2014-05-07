@@ -224,7 +224,7 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
                           //    printk(KERN_ALERT "DNPMEM ig CORRECT\n");
                                 skb = adapter->alloc_dnpskb(netdev,bufsz, adapter->dnpvf_id);       
                                 if (!skb){
-                        //    adapter->alloc_rx_buff_failed++;
+                                   adapter->alloc_rx_buff_failed++;
                                    goto no_buffers;                            
                                 }                                                
                                 buffer_info->skb = skb;
@@ -267,10 +267,10 @@ static void igbvf_alloc_rx_buffers(struct igbvf_ring *rx_ring,
                         skb = adapter->alloc_dnpskb(netdev,bufsz, adapter->dnpvf_id);
        
                         if (!skb){
-                        //    adapter->alloc_rx_buff_failed++;
+                            adapter->alloc_rx_buff_failed++;
                             goto no_buffers;                            
                         }
-                                                
+
                         buffer_info->skb = skb;
                         buffer_info->dma = dma_map_page(&pdev->dev,
                                                  skb_shinfo(skb)->frags[0].page.p,
@@ -742,7 +742,7 @@ static void igbvf_clean_rx_ring(struct igbvf_ring *rx_ring)
                          /*   dma_unmap_page(&pdev->dev, buffer_info->dma,
                                     PAGE_SIZE,
                                     DMA_FROM_DEVICE);*/
-                            adapter->free_dnpskb(buffer_info->skb, adapter->dnpvf_id);
+                            //adapter->free_dnpskb(buffer_info->skb, adapter->dnpvf_id);
                             buffer_info->dma = 0;
                         }else                   
 #endif                    
@@ -2820,7 +2820,7 @@ static int __devinit igbvf_probe(struct pci_dev *pdev,
 	int err, pci_using_dac;   
         //[DNP][metis]
         // printk(KERN_INFO "[DNP][metis] changes in action..igbvf driver_2003_1444\n");
-        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_0505_1926\n");
+        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_0705_1326\n");
 #ifdef DNP_XEN
         printk(KERN_INFO "[DNPMEM][START] ig DNP XEN Flag Enabled\n");
 #else
@@ -2966,7 +2966,7 @@ static int __devinit igbvf_probe(struct pci_dev *pdev,
 // dnptwo  <<<<<<<<<<
 #ifdef DNP_XEN
         adapter->rx_ring->count = 128; //bad fix .. to help frontend !!
-	adapter->tx_ring->count = 128;
+	adapter->tx_ring->count = 1024;
 #else
 // dnptwo  >>>>>>>>>> 
 	adapter->rx_ring->count = 1024;

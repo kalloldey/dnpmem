@@ -15,7 +15,6 @@
       <in>regs.h</in>
       <in>vf.h</in>
       <in>vfway.c</in>
-      <in>xen-netback.mod.c</in>
       <in>xenbus.c</in>
     </df>
   </logicalFolder>

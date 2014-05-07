@@ -83,6 +83,53 @@ static void noinline do_check_kpage(void *vaddr)
 }
 #endif
 
+
+/**
+ * This is the initial module of the controller .. need to called only once
+ * Works:
+ * Will search for vf and will populate one data structure kept.
+ * @return 
+ */
+void dnp_controller_init(void){    
+    //alldnpVFs[] need to be populated...
+    /*Search for all the netdevice in init_net namespace .. 
+     * Identify if they are vf .. if so then save their info in alldnpVFs
+     */
+    //Temporary Hack: use the available vfs name hardcoded ... remove it as early as possible
+    //take two vf .. eth4 and eth5 .. total vf=2;
+    total_VM = 0;
+    effective_VM = 0;
+    total_VF=2;
+    total_VF_Assigned=0;
+    alldnpVFs[0]=(struct dnpvf *)kzalloc(sizeof(struct dnpvf),GFP_KERNEL);
+    alldnpVFs[1]=(struct dnpvf *)kzalloc(sizeof(struct dnpvf),GFP_KERNEL);
+    strcpy(alldnpVFs[0]->name,"eth5");
+    alldnpVFs[0]->vm_domid=-1;
+    alldnpVFs[0]->dnp_netdev=dev_get_by_name(&init_net,alldnpVFs[0]->name);
+    MASSERT(alldnpVFs[0]->dnp_netdev);
+    strcpy(alldnpVFs[1]->name,"eth6");
+    alldnpVFs[1]->vm_domid=-1;
+    alldnpVFs[1]->dnp_netdev=dev_get_by_name(&init_net,alldnpVFs[1]->name);
+    dnp_kobj = kobject_create_and_add("dnp", NULL);
+    if (!dnp_kobj)
+           printk(KERN_WARNING "%s: kobj create error\n", __func__);
+    dnpctrs = kmalloc(sizeof(struct dnp_counters),GFP_KERNEL);
+    if(dnpctrs){
+        memset(dnpctrs,0,sizeof(struct dnp_counters));
+        if(sysfs_create_group(dnp_kobj, &attr_group)){
+               printk(KERN_WARNING "%s: kobj group create errot\n",__func__);
+        }else{
+               printk(KERN_WARNING "Out of memory: %s\n",__func__);
+        }
+    }
+    if (xen_feature(XENFEAT_auto_translated_physmap))
+          printk(KERN_INFO "XENFEAT_auto_translated_physmap AUTO\n");
+    else
+          printk(KERN_INFO "XENFEAT_auto_translated_physmap NOPE\n");
+
+}
+
+
 int associate_dnpvf_with_backend(struct xenvif *vif){  
  
     int i, cn;
@@ -124,12 +171,14 @@ int associate_dnpvf_with_backend(struct xenvif *vif){
     vif->skb_freed = 0;
     vif->skb_receive_count = 0;    
     
+    spin_lock_init(&vif->counter_lock);
+    
     vif->use_pageq = 1;
     if (kfifo_alloc(&vif->page_queue, sizeof(unsigned long)*DNP_MAX_NR_PAGE*2, GFP_ATOMIC)){
         printk(KERN_INFO "DNPMEM nb, PROBLEM IN CREATING KERNEL QUEUE\n");
         vif->use_pageq = 0;
     }else{    
-        for(cn=0;cn <DNP_MAX_NR_PAGE; cn++){
+        for(cn=0;cn <DNP_MAX_NR_PAGE*2; cn++){
                 unsigned long val;
                 struct page *tmp= alloc_page(GFP_ATOMIC);
                 if (tmp == NULL){
@@ -172,7 +221,7 @@ int associate_dnpvf_with_backend(struct xenvif *vif){
  * This function implementation is currently redundant. 
  
  */
-struct xenvif *vfnetdev_to_xenvif(struct net_device *dev){
+struct xenvif* noinline vfnetdev_to_xenvif(struct net_device *dev){
     struct xenvif *vif = NULL;
     struct igbvf_adapter *tmp=netdev_priv(dev);
     if(tmp->dnpvf_id >=0 )    
@@ -184,7 +233,7 @@ struct xenvif *vfnetdev_to_xenvif(struct net_device *dev){
 
 /*Get netdevice with respect to the dnpvf  
  */
-struct net_device *getNetdev(int ind){
+struct net_device* noinline getNetdev(int ind){
     if(ind==-1)
         return NULL;
     return alldnpVFs[ind]->dnp_netdev;
@@ -199,53 +248,6 @@ int dnpvf_can_be_assigned(void){
 }
 
 
-
-/**
- * This is the initial module of the controller .. need to called only once
- * Works:
- * Will search for vf and will populate one data structure kept.
- * @return 
- */
-void dnp_controller_init(void){    
-    //alldnpVFs[] need to be populated...
-    /*Search for all the netdevice in init_net namespace .. 
-     * Identify if they are vf .. if so then save their info in alldnpVFs
-     */
-    //Temporary Hack: use the available vfs name hardcoded ... remove it as early as possible
-    //take two vf .. eth4 and eth5 .. total vf=2;
-    total_VM = 0;
-    effective_VM = 0;
-    total_VF=2;
-    total_VF_Assigned=0;
-    alldnpVFs[0]=(struct dnpvf *)kzalloc(sizeof(struct dnpvf),GFP_KERNEL);
-    alldnpVFs[1]=(struct dnpvf *)kzalloc(sizeof(struct dnpvf),GFP_KERNEL);
-    strcpy(alldnpVFs[0]->name,"eth5");
-    alldnpVFs[0]->vm_domid=-1;
-    alldnpVFs[0]->dnp_netdev=dev_get_by_name(&init_net,alldnpVFs[0]->name);
-    MASSERT(alldnpVFs[0]->dnp_netdev);
-    strcpy(alldnpVFs[1]->name,"eth6");
-    alldnpVFs[1]->vm_domid=-1;
-    alldnpVFs[1]->dnp_netdev=dev_get_by_name(&init_net,alldnpVFs[1]->name);
-    dnp_kobj = kobject_create_and_add("dnp", NULL);
-    if (!dnp_kobj)
-           printk(KERN_WARNING "%s: kobj create error\n", __func__);
-    dnpctrs = kmalloc(sizeof(struct dnp_counters),GFP_KERNEL);
-    if(dnpctrs){
-        memset(dnpctrs,0,sizeof(struct dnp_counters));
-        if(sysfs_create_group(dnp_kobj, &attr_group)){
-               printk(KERN_WARNING "%s: kobj group create errot\n",__func__);
-        }else{
-               printk(KERN_WARNING "Out of memory: %s\n",__func__);
-        }
-    }
-    if (xen_feature(XENFEAT_auto_translated_physmap))
-          printk(KERN_INFO "KKKKKK AUTO\n");
-    else
-          printk(KERN_INFO "KKKKKK NOPE\n");
-
- //   EXIT();
-    /*<-- Temporary hack ends here ... remove it ASAP[03.10.2013]*/        
-}
 
 // dnptwo  <<<<<<<<<<
 
@@ -262,9 +264,9 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
         MASSERT(0);
         return NULL;
     }
-    //    printk(KERN_INFO "%s %d:%s vif leader=%u, vif follwer=%u  \n",__FILE__,__LINE__,__func__,vif->leader, vif->follower);
+   // printk(KERN_INFO "%s %d:%s vif leader=%lu, vif follwer=%lu  \n",__FILE__,__LINE__,__func__,vif->leader, vif->follower);
     if (freeloc(vif->leader, vif->follower, vif->fullflag) == DNP_MAX_NR_PAGE) {
-        // printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
+       // printk(KERN_ERR "DNPMEM nb No page present that can be allocated \n");
         if (RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
             wake_up(&vif->waitq);
         return NULL;
@@ -280,11 +282,11 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     nr_buf = DNP_SKB_BUF_REQ(length);
 
     MASSERT(nr_buf == 1)
-    if (nr_buf > MAX_SKB_FRAGS) {
-        MASSERT(0)
-        printk(KERN_ERR "DNPMEM nb allocate skb nr_buf more than 1\n");
-        return NULL;
+    if(nr_buf != 1){
+         printk(KERN_ERR "DNPMEM nb **ERROR**  Cannot allocated skb with nr_buf not equal to 1\n");
+         return NULL; 
     }
+
 
     loc = INCR(vif->follower, 0);
     BUG_ON(!vif->page_mapped[loc]);
@@ -310,10 +312,15 @@ struct sk_buff *dnp_alloc_skb(struct net_device *netdevice, unsigned int length,
     vif->skb_with_driver++;
     //   printk(KERN_INFO "DNPMEM nb skbs given to driver = %lu,  buffer from loc= %u\n",vif->skb_with_driver, vif->follower);
     //Below two are atomic ..need to ensure
+    //spin_lock_irqsave(&vif->counter_lock, flags);
+    spin_lock_irq(&vif->counter_lock);
     vif->fullflag = INCR(vif->follower, 0) == vif->leader ? false : vif->fullflag;
     vif->follower = INCR(vif->follower, 1);
-
-    if (!(vif->skb_with_driver % 12))
+    //spin_unlock_irqrestore(&vif->counter_lock, flags);
+    spin_unlock_irq(&vif->counter_lock);
+    
+    //if (!(vif->skb_with_driver % 12))
+    if(RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
         wake_up(&vif->waitq);
     //keep some check to kick other buffer getting service and skb freeing service here
     return skb;
@@ -358,7 +365,7 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         //Directly send packet to guest .. and unmap page
         u16 flags = 0;
         struct xenvif *vif = NULL;
-        struct xen_netif_rx_response *resp;	
+        struct xen_netif_rx_response *resp=NULL;	
         struct dnp_cb *data=NULL;
         struct gnttab_unmap_grant_ref unmap[1];
         struct page *pp[1];
@@ -381,13 +388,13 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
             goto bypass;
         }
        // printk(KERN_INFO "DNPMEM nb %s:%d func=%s | skbCB: id=%u, grantref=%u pageaddr=%p, grant_handle =%u, page virt addr=%lu\n",__FILE__,__LINE__,__func__,data->id,data->gref,data->pgad,data->handle, (unsigned long)pfn_to_kaddr(page_to_pfn(data->pgad)));
-        if (skb->ip_summed == CHECKSUM_PARTIAL)
+ /*       if (skb->ip_summed == CHECKSUM_PARTIAL)
                 flags |= XEN_NETRXF_csum_blank | XEN_NETRXF_data_validated;
         else if (skb->ip_summed == CHECKSUM_UNNECESSARY)
 
                 flags |= XEN_NETRXF_data_validated;
         else
-                flags = 0;                       
+                flags = 0;  */                     
 //        printk(KERN_INFO "DNPMEM nb, VFWAY req prod=%u req cons=%u resp prod=%u in req unconsumed=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
 #if 0
         if(data->pgad){
@@ -402,27 +409,28 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
         
 
         BUG_ON(skb_shinfo(skb)->frags[0].page.p != (struct page *)data->pgad);
-        vaddr=(unsigned long)pfn_to_kaddr(page_to_pfn(skb_shinfo(skb)->frags[0].page.p));             
+        vaddr = (unsigned long)pfn_to_kaddr(page_to_pfn(skb_shinfo(skb)->frags[0].page.p));             
         gnttab_set_unmap_op(&unmap[0],
                 vaddr,
                 GNTMAP_host_map,
                 data->handle);
-        pp[0]=virt_to_page(vaddr); 
+        pp[0] = virt_to_page(vaddr); 
         ret = gnttab_unmap_refs(unmap, NULL,pp,1 );
         
         if(ret)
             printk(KERN_INFO "DNPMEM nb, Error In Ring UNMAP\n");
         if (unlikely(unmap[0].status != 0)) {
-                printk(KERN_INFO "DNPMEM nb, Not UNMAPPED correctly status=%d \n", unmap[0].status);
+               printk(KERN_INFO "DNPMEM nb, Not UNMAPPED correctly status=%d \n", unmap[0].status);
                 BUG_ON(1);
         }                      
         resp = RING_GET_RESPONSE(&vif->rx, vif->rx.rsp_prod_pvt);
+        BUG_ON(!resp);
 	resp->offset     = 0;
 	resp->flags      = flags;
 	resp->id         = data->id;
 	resp->status     = (s16)skb->len; //DOUBT. correct ?? lets proceed with this ..
         vif->rx.rsp_prod_pvt++;
-      //  printk(KERN_INFO "DNPMEM nb, VFWAY reqP=%u reqC=%u resp-P=%u req_to_consm=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));        
+//        printk(KERN_INFO "DNPMEM nb, VFWAY reqP=%u reqC=%u resp-P=%u req_to_consm=%d\n",vif->rx.sring->req_prod,vif->rx.req_cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
       
 #if 0  
         if(skb_shinfo(skb)->frags[0].page.p){
@@ -444,7 +452,7 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
        }else{
                 printk(KERN_INFO "DNPMEM nb error Page Queue is full\n");  
        }
-                           
+       BUG_ON(skb_shinfo(skb)==NULL);                    
        skb_shinfo(skb)->frags[0].page.p = NULL;
        skb_shinfo(skb)->nr_frags=0;
        kfree_skb(skb);     
@@ -452,7 +460,9 @@ int vfway_send_pkt_to_guest(struct sk_buff *skb, struct net_device *dev, int net
        if(ret)
             notify_remote_via_irq(vif->irq);
        dnpctrs->num_rcvd++;
+       return NETDEV_TX_OK;
 bypass:          
+        printk(KERN_INFO "DNPMEM nb Dropped packet\n");
         return NETDEV_TX_OK;
 /*
  drop:
@@ -483,10 +493,10 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     free_loc = freeloc(vif->leader, vif->follower, vif->fullflag);
     current_mapped = DNP_MAX_NR_PAGE - free_loc;
 
-    if(current_mapped >= DNP_THRESHOLD){
+    /*if(current_mapped >= DNP_THRESHOLD){  //Revert THIS if need
         MASSERT(0);
         return; //we have enough buffer ...
-    }
+    }*/
     if(free_loc == 0){
         MASSERT(0);
         return; //no place in your DNPRING
@@ -494,7 +504,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     cons = vif->rx.req_cons ;
     prods = vif->rx.sring->req_prod;
     
-//    printk(KERN_INFO "DNPMEM nb, DMF req prod=%u req cons=%u resp prod=%u in req unconsumed=%d\n",prods,cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
+//    printk(KERN_INFO "DNPMEM nb, DMF req prod=%u req cons=%u resp prod=%u req unconsumed=%d\n",prods,cons,vif->rx.rsp_prod_pvt,RING_HAS_UNCONSUMED_REQUESTS(&vif->rx));
     if(!RING_HAS_UNCONSUMED_REQUESTS(&vif->rx)){
         //printk(KERN_INFO "DNPMEM nb NO REQUEST In Ring .. So Return From Here \n");
         return;
@@ -507,7 +517,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
     req_avail = prods - cons;
     free_loc = free_loc < req_avail ? free_loc : req_avail;
     //ONLY DO THE REQUIRED AMOUNT TO CROSS THE THRESHOLD
-    free_loc = free_loc < (DNP_THRESHOLD - current_mapped) ? free_loc :(DNP_THRESHOLD - current_mapped);
+   // free_loc = free_loc < (DNP_THRESHOLD - current_mapped) ? free_loc :(DNP_THRESHOLD - current_mapped);
     
     tmp_map_ops = (struct gnttab_map_grant_ref *)kzalloc(sizeof(struct gnttab_map_grant_ref) * free_loc, GFP_KERNEL);
     tmp_page_mapped =(struct page **)kzalloc(sizeof(unsigned long) * free_loc, GFP_KERNEL);
@@ -536,6 +546,7 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
         if(i == free_loc)
             break;                
         req = RING_GET_REQUEST(&vif->rx, vif->rx.req_cons++);
+        BUG_ON(!req);
         gnttab_set_map_op(&tmp_map_ops[i],
                     		(unsigned long)pfn_to_kaddr(page_to_pfn(tmp_page_mapped[i])),
                     		GNTMAP_host_map,
@@ -575,10 +586,14 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
         }
     }
     //DO THE BELOW TWO ATOMICALLY
+   // spin_lock_irqsave(&vif->counter_lock, flags);
+    spin_lock_irq(&vif->counter_lock);
     vif->fullflag =  vif->follower == INCR(vif->leader , ci)? true:false;
     vif->leader = INCR(vif->leader , ci);
+   // spin_unlock_irqrestore(&vif->counter_lock, flags);
+    spin_unlock_irq(&vif->counter_lock);
     //no need to save handle as I will get it from dnp_map_ops     
- //   printk(KERN_INFO "DNPMEM nb ,mapbuffer: leader= %u follower=%u map_possibility=%u correct-mapped=%u\n",vif->leader,vif->follower,free_loc,ci);
+ //   printk(KERN_INFO "DNPMEM nb ,mapbuffer: leader= %lu follower=%lu\n",vif->leader,vif->follower);
     kfree(tmp_map_ops);
     kfree(tmp_page_mapped);
    // EXIT();
@@ -587,15 +602,17 @@ void dnp_map_frontend_buffer(struct xenvif *vif){
 int dnp_buffer_kthread(void *data){
     struct xenvif *vif = (struct xenvif *)data;
     while (!kthread_should_stop()) {
-		wait_event_interruptible(vif->waitq,
+		/*wait_event_interruptible(vif->waitq,
                         ( ((DNP_MAX_NR_PAGE - (freeloc(vif->leader, vif->follower, vif->fullflag))) < DNP_THRESHOLD) ) 
-                        || kthread_should_stop() );
-                cond_resched();                  
+                        || kthread_should_stop() );*/
+                wait_event_interruptible_timeout(vif->waitq,
+                        RING_HAS_UNCONSUMED_REQUESTS(&vif->rx) 
+                        || kthread_should_stop(),msecs_to_jiffies(10));
+                //cond_resched();                  
                 //PRN("Thread inside after wake up...\n");
                 if (kthread_should_stop())
 			break;
-                if(RING_HAS_UNCONSUMED_REQUESTS(&vif->rx))
-                        dnp_map_frontend_buffer(vif);                                        
+                dnp_map_frontend_buffer(vif);                                        
     }
     return 0;                    
 }
