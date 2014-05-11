@@ -257,8 +257,9 @@ static void frontend_changed(struct xenbus_device *dev,
 #ifdef DNP_XEN  
                 be->vif->assigned_dnpVF_ID = -1;
                 be->vif->dnp_net_device = NULL;
-                register_vif(be->vif);  
-                switch_vif_netif(be->vif->domid,1);
+                register_vif(be->vif);                
+                //Below only need if I want to start with bridge
+                //switch_vif_netif(be->vif->domid,1); 
 #endif
 		break;
 

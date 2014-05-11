@@ -507,7 +507,7 @@ send_up:
 #ifdef DNP_XEN
                        if(adapter->dnpvf_id!=-1){
                            DASSERT(0);
-                        //   adapter->free_dnpskb(skb,  adapter->dnpvf_id);
+                           adapter->free_dnpskb(skb,  adapter->dnpvf_id);
                        }else
 #endif                 
                             
@@ -739,10 +739,10 @@ static void igbvf_clean_rx_ring(struct igbvf_ring *rx_ring)
 #ifdef DNP_XEN                    
                         if(adapter->dnpvf_id!=-1){
                            // DENTER();                           
-                         /*   dma_unmap_page(&pdev->dev, buffer_info->dma,
+                            dma_unmap_page(&pdev->dev, buffer_info->dma,
                                     PAGE_SIZE,
-                                    DMA_FROM_DEVICE);*/
-                            //adapter->free_dnpskb(buffer_info->skb, adapter->dnpvf_id);
+                                    DMA_FROM_DEVICE);
+                            adapter->free_dnpskb(buffer_info->skb, adapter->dnpvf_id);
                             buffer_info->dma = 0;
                         }else                   
 #endif                    
@@ -2222,7 +2222,8 @@ static int igbvf_maybe_stop_tx(struct net_device *netdev, int size)
 	/* there is enough descriptors then we don't need to worry  */
 	if (igbvf_desc_unused(adapter->tx_ring) >= size)
 		return 0;
-
+   
+        printk(KERN_INFO "Line=%d adpter size=%d request=%d\n",__LINE__,igbvf_desc_unused(adapter->tx_ring),size);
 	netif_stop_queue(netdev);
 
 	smp_mb();
@@ -2406,6 +2407,7 @@ static netdev_tx_t igbvf_xmit_frame_ring_adv(struct sk_buff *skb,
 	 */
 	if (igbvf_maybe_stop_tx(netdev, skb_shinfo(skb)->nr_frags + 4)) {
 		/* this is a hard error */
+                printk(KERN_INFO "Line=%d Frags are really very high... nrfrags=%d\n",__LINE__,skb_shinfo(skb)->nr_frags);
 		return NETDEV_TX_BUSY;
 	}
 
@@ -2451,23 +2453,6 @@ static netdev_tx_t igbvf_xmit_frame_ring_adv(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
-static netdev_tx_t igbvf_xmit_frame(struct sk_buff *skb,
-				    struct net_device *netdev)
-{
-	struct igbvf_adapter *adapter = netdev_priv(netdev);
-	struct igbvf_ring *tx_ring;
-
-	if (test_bit(__IGBVF_DOWN, &adapter->state)) {
-		dev_kfree_skb_any(skb);
-		return NETDEV_TX_OK;
-	}
-
-	tx_ring = &adapter->tx_ring[0];
-
-	return igbvf_xmit_frame_ring_adv(skb, netdev, tx_ring);
-}
-
-EXPORT_SYMBOL(igbvf_xmit_frame);
 
 /**
  * igbvf_tx_timeout - Respond to a Tx Hang
@@ -2780,6 +2765,26 @@ static int igbvf_set_features(struct net_device *netdev,
 	return 0;
 }
 
+static netdev_tx_t igbvf_xmit_frame(struct sk_buff *skb,
+				    struct net_device *netdev)
+{
+	struct igbvf_adapter *adapter = netdev_priv(netdev);
+	struct igbvf_ring *tx_ring;
+
+	if (test_bit(__IGBVF_DOWN, &adapter->state)) {
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+
+	tx_ring = &adapter->tx_ring[0];
+#ifdef DNP_XEN /*Hacked fix to avoid stall of tx queue*/
+        if (igbvf_desc_unused(adapter->tx_ring) < MAX_SKB_FRAGS + 4)
+            igbvf_netpoll(netdev);
+#endif
+	return igbvf_xmit_frame_ring_adv(skb, netdev, tx_ring);
+}
+
+EXPORT_SYMBOL(igbvf_xmit_frame);
 static const struct net_device_ops igbvf_netdev_ops = {
 	.ndo_open                       = igbvf_open,
 	.ndo_stop                       = igbvf_close,
@@ -2820,7 +2825,7 @@ static int __devinit igbvf_probe(struct pci_dev *pdev,
 	int err, pci_using_dac;   
         //[DNP][metis]
         // printk(KERN_INFO "[DNP][metis] changes in action..igbvf driver_2003_1444\n");
-        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_0705_1326\n");
+        printk(KERN_INFO "[DNPMEM][START] ig #############  igbvf_1105_2226\n");
 #ifdef DNP_XEN
         printk(KERN_INFO "[DNPMEM][START] ig DNP XEN Flag Enabled\n");
 #else

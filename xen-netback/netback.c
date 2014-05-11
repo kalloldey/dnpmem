@@ -198,17 +198,17 @@ static int max_required_rx_slots(struct xenvif *vif)
 int xen_netbk_rx_ring_full(struct xenvif *vif)
 {
 	RING_IDX peek   = vif->rx_req_cons_peek;
-	RING_IDX needed = max_required_rx_slots(vif);
-
+	RING_IDX needed = max_required_rx_slots(vif);        
 	return ((vif->rx.sring->req_prod - peek) < needed) ||
 	       ((vif->rx.rsp_prod_pvt + XEN_NETIF_RX_RING_SIZE - peek) < needed);
 }
 
 int xen_netbk_must_stop_queue(struct xenvif *vif)
 {
+      //  FLOW();
 	if (!xen_netbk_rx_ring_full(vif))
 		return 0;
-
+      //  FLOW();
 	vif->rx.sring->req_event = vif->rx_req_cons_peek +
 		max_required_rx_slots(vif);
 	mb(); /* request notification /then/ check the queue */
@@ -556,10 +556,12 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 
 	while ((skb = skb_dequeue(&netbk->rx_queue)) != NULL) {
 		vif = netdev_priv(skb->dev);
-#ifdef DNP_XEN
+#ifdef DNP_XEN                
                 if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to resole this
-                //    printk(KERN_INFO "DNPMEM nb In Old Code Path--1 \n");
-                    continue;
+                       // printk(KERN_INFO "DNPMEM nb In Old Code Path--1 \n");
+                        continue;
+                }else{
+                      //  printk(KERN_INFO "DNPMEM nb Bridge Way. reqP=%d reqC=%d respP=%d \n",vif->rx.sring->req_prod,vif->rx.req_cons, vif->rx.rsp_prod_pvt);
                 }
 #endif                
 		nr_frags = skb_shinfo(skb)->nr_frags;               
@@ -597,10 +599,12 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 
 		vif = netdev_priv(skb->dev);
 #ifdef DNP_XEN
-                if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to resole this
-                   // printk(KERN_INFO "DNPMEM nb In Old Code Path--2 \n");
-                    xenvif_put(vif);
-                    continue;
+                if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to look into this
+                    printk(KERN_INFO "DNPMEM nb In Old Code Path--2 \n");
+                   // xenvif_put(vif);  //Why comment this? 11thMay Uncomment if have any issue in VF path
+                   // continue;
+                }else{
+                    //printk(KERN_INFO "DNPMEM nb Bridge Coming here also reqP=%d reqC=%d respP=%d \n",vif->rx.sring->req_prod,vif->rx.req_cons, vif->rx.rsp_prod_pvt);
                 }
 #endif                
 /*                if(vif < 0x10000){
@@ -610,7 +614,7 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 		if (netbk->meta[npo.meta_cons].gso_size && vif->gso_prefix) {
 #ifdef DNP_XEN
         if(vif->assigned_dnpVF_ID !=-1){
-             //   printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--5 \n");                
+                printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--5 \n");                
         }
 #endif                    
 			resp = RING_GET_RESPONSE(&vif->rx,
@@ -656,7 +660,7 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
 						  vif->rx.rsp_prod_pvt++);
 #ifdef DNP_XEN
                         if(vif->assigned_dnpVF_ID !=-1){
-                             //   printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--6 \n");                
+                             printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--6 \n");                
                         }
 #endif
 			resp->flags |= XEN_NETRXF_extra_info;
@@ -704,6 +708,10 @@ static void xen_netbk_rx_action(struct xen_netbk *netbk)
  */
 void xen_netbk_queue_tx_skb(struct xenvif *vif, struct sk_buff *skb)
 {
+    /*No need to add any further check here. The single guy who is calling this
+     * function will already take care to not call it if the vif has a  VF with
+     * it.
+     */
 	struct xen_netbk *netbk = vif->netbk;
 
 	skb_queue_tail(&netbk->rx_queue, skb);
@@ -1715,7 +1723,7 @@ static struct xen_netif_rx_response *make_rx_response(struct xenvif *vif,
 	struct xen_netif_rx_response *resp;
 #ifdef DNP_XEN
         if(vif->assigned_dnpVF_ID !=-1){
-              //  printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--4 \n");                
+              printk(KERN_INFO "DNPMEM nb UNEXPECTED In Old Code Path--4 \n");                
         }
 #endif
 
@@ -1824,7 +1832,7 @@ static int __init netback_init(void)
 	int i;
 	int rc = 0;
 	int group;
-        printk(KERN_INFO "[DNPMEM][START] Xen Netback ================  0505_2126\n");
+        printk(KERN_INFO "[DNPMEM][START] Xen Netback ================  1105_2226\n");
 	if (!xen_domain())
 		return -ENODEV;
         /* [DNP] Will initialize the dnp controller */

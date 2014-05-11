@@ -228,10 +228,16 @@ struct xenvif {
 #ifdef DNP_XEN   
 
         int assigned_dnpVF_ID;  // will be -1 if no dnfvf currently have;
-// dnptwo  <<<<<<<<<<        
+// dnptwo  <<<<<<<<<<  
+        struct kfifo map_info_queue;
+        int in_transit;  //0: No, 1:Transit from VF to bridge
+        struct sk_buff_head avail_skb;  //the DB of skb
 	spinlock_t counter_lock;
+        
         struct kfifo page_queue;
         int use_pageq;
+        unsigned long *all_queued_pages; //this is usefult while rebuild mapping for all pages.
+        
         struct net_device *dnp_net_device;  /*[Kallol]Introduce another data type to keep the info 
                                                 * of VF that can be assigned to this backend*/
         struct task_struct *buffer_thread;
@@ -241,18 +247,7 @@ struct xenvif {
         unsigned long skb_freed;
         unsigned long skb_receive_count;
         
-        struct page **page_mapped;  
-        struct gnttab_map_grant_ref *dnp_map_ops;
-        uint16_t *dnp_mapped_id;
-        
-        unsigned long leader;  /* will increase when dom0 will get some page to 
-                                    be mapped to its own address space*/
-        unsigned long follower;  /* will increase when dom0 will use some mapped pages
-                                            *  to the driver*/     
-        bool fullflag; //will be 1 when leader == follower but queue is full, 0 other wise .. start with 0
- /*     struct sk_buff_head avail_skb;  //the DB of skb
-        struct sk_buff_head rx_queue;  //will keep the skbs may be that will come from the driver
-        struct sk_buff_head recycle_skb;  // receive processed now this skb will be again used as avail*/
+        struct dnp_cb *map_info;              
 // dnptwo  >>>>>>>>>>
 #endif
 };
@@ -327,7 +322,7 @@ void xen_netbk_kick_thread(struct xen_netbk *);
 struct dnp_cb {
     uint16_t    id; 
     grant_ref_t gref;  //not required may be ...
-    struct page *pgad;
+    unsigned long pgad;
     grant_handle_t handle;
 };
 
@@ -340,7 +335,7 @@ struct dnpvf{
         int vm_domid;           //VM domid to which it is assigned, if not assigned then -1
         struct net_device *dnp_netdev; //netdevice structure mapped to this VF
         struct xenvif *xennetvif;
-        u8   fe_dev_addr[6];  //MAC address of this vf        
+        u8   default_mac[6];  //Default MAC address of this vf        
 };
 
 int associate_dnpvf_with_backend(struct xenvif *);
@@ -350,16 +345,17 @@ void updatednpVF(int ,int ,int);
 int dnpvf_can_be_assigned(void);
 void dnp_controller_init(void);
 int backend_allocate_dnpVF(struct xenvif *);
-int vfway_send_pkt_to_guest(struct sk_buff *, struct net_device *, int); //dnptwo modification
+void vfway_send_pkt_to_guest(struct xenvif *vif);
 unsigned vfway_xen_netbk_tx_build_gops(struct xen_netbk *);
 void xen_netbk_tx_submit_to_dnpvf(struct xen_netbk *);
 void vfway_xen_netbk_tx_action(struct xen_netbk *);
-extern netdev_tx_t igbvf_xmit_frame(struct sk_buff *skb,struct net_device *netdev);
-extern int dvfa_set_mac(struct net_device *netdev, u8 *mac_addr);
+extern netdev_tx_t igbvf_xmit_frame(struct sk_buff *,struct net_device *);
+extern int dvfa_set_mac(struct net_device *, u8 *);
 
 // dnptwo  <<<<<<<<<<
+int vfway_receive_rxpkt(struct sk_buff *, struct net_device *, int );
 extern void set_restart_igbvf(struct net_device *,int );
-void dnp_map_frontend_buffer(struct xenvif *vif);
+void dnp_map_frontend_buffer(struct xenvif *);
 struct sk_buff *dnp_alloc_skb(struct net_device *, unsigned int , int);
 void dnp_free_skb(struct sk_buff *skb, int vfid);
 int dnp_buffer_kthread(void *data);

@@ -362,7 +362,7 @@ extern unsigned int copybreak;
  */
 #ifdef DNP_XEN
 //extern int vfway_send_pkt_to_guest(struct sk_buff *, struct net_device *);
-extern int vfway_send_pkt_to_guest(struct sk_buff *, struct net_device *, int ); //dnptwo modifications
+extern int vfway_receive_rxpkt(struct sk_buff *, struct net_device *, int ); //dnptwo modifications
 
 // dnptwo  <<<<<<<<<<
 extern struct sk_buff *dnp_alloc_skb(struct net_device *, unsigned int, int );

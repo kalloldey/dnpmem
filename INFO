@@ -1,4 +1,26 @@
+[12-05-2014:0015]
+	Perfect with switching in both way .... 
+	Tested with 10 times switching in noth way
+	Tested with 3 VMs with 2 VFs and switch all around
+	Todo: 
+	{minor} Add a show status kinda thing to show which VM are having VFs now
+	{major} Most probably one bug is there in iperf -c inside vm, solve that
+	{major} Performance improvement
+
+[09-05-2014:2038]
+	Changes done to introduce a single structure to keep all data
+	Crash on iperf -c in vm
+	Next do introduce a queue and keep the struct there...
+	For any problme better switch back to 8-th May version that is stable one
+	
+
+[08-05-2014:2200]
+	NO Crash "Almost"
+	Skb queueing and sending in batch to frontend 
+	TO DO : Switch	
+
 [07-05-2014:1334]
+	NO crash
 	Most of the bug solved
 	TODO:
 	Garbage collect of the pages-> map rebuild for pfn to mfn

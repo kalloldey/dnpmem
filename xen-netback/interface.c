@@ -153,6 +153,12 @@ static int xenvif_open(struct net_device *dev)
 static int xenvif_close(struct net_device *dev)
 {
 	struct xenvif *vif = netdev_priv(dev);
+#ifdef DNP_XEN
+         if(vif->assigned_dnpVF_ID !=-1){ //DNPMEM Action : Need to look into this
+                switch_vif_netif((int)vif->domid,1);
+                //First bring it back to bridge then do the processing
+         }
+#endif        
 	if (netif_carrier_ok(dev))
 		xenvif_down(vif);
 	netif_stop_queue(dev);
